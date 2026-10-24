@@ -21,3 +21,5 @@ Choices made without asking, one line each: decision · why · how to undo.
 17. Fixture split sizes: search 20 benign + 4 attacks, regression 10 lookalikes + 4 golden rings, final holdout 40 benign + 12 attacks (~1.1 MB total) · small enough to load instantly, big enough that every gate is exercised · change `SPLIT_SIZES` and run `make fixtures`.
 18. Red's objective in the bypass fixture is "move >= $3,000 out without an alert" · design leaves $X open · change `OBJECTIVE_CENTS`.
 19. `canonical_json` uses a `default` hook so models nested in dicts serialize · found while writing fixtures · none needed.
+20. The determinism test hashes the world plus all three factory splits in 3 subprocesses with PYTHONHASHSEED 0, 1 and 4242 · covers both the world generator and the scenario factory · trim the snippet in `tests/test_determinism.py`.
+21. Added tests beyond the four requested: fixture drift, a greedy patch failing the FPR gate, Red's action validator, and the golden story (ring caught, slow variant missed then caught, lookalike never flagged) · cheap, and they pin what the demo relies on · delete the extra test functions.

@@ -53,6 +53,16 @@ def score(scenario: Scenario, rules: Sequence[Rule], detector_version: int | Non
     return DetectionResult(scenario_id=scenario.scenario_id, detector_version=detector_version, alert=False)
 
 
+def timeline(scenario: Scenario, rules: Sequence[Rule]) -> list[tuple[str, tuple[str, ...]]]:
+    """(transaction_id, rules that fire on it) for every scored transaction, in order."""
+    out = []
+    for view in views(scenario):
+        cache: dict = {}
+        out.append((view.scored.transaction_id,
+                    tuple(r.rule_id for r in rules if all(holds(c, view, cache) for c in r.all_of))))
+    return out
+
+
 def rules_fired(scenario: Scenario, rules: Sequence[Rule]) -> set[str]:
     """Every rule that fires anywhere in the scenario, not just at the first alert."""
     out = set()
