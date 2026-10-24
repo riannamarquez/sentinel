@@ -1,0 +1,154 @@
+{
+  "baseline_v1": {
+    "alert": false,
+    "detector_version": 1,
+    "features": {},
+    "first_alert_time": null,
+    "scenario_id": "search.slow_chain_3.0000",
+    "triggered_rule_ids": []
+  },
+  "note": "Slow three-mule chain. Baseline v1 misses it; the golden patch catches it.",
+  "scenario": {
+    "actions": [
+      {
+        "amount_cents": null,
+        "device_id": null,
+        "source_id": null,
+        "target_id": "M1",
+        "timestamp_offset": 0,
+        "type": "open_synthetic_account"
+      },
+      {
+        "amount_cents": null,
+        "device_id": null,
+        "source_id": null,
+        "target_id": "M2",
+        "timestamp_offset": 0,
+        "type": "open_synthetic_account"
+      },
+      {
+        "amount_cents": null,
+        "device_id": null,
+        "source_id": null,
+        "target_id": "M3",
+        "timestamp_offset": 0,
+        "type": "open_synthetic_account"
+      },
+      {
+        "amount_cents": 802949,
+        "device_id": null,
+        "source_id": "SRC",
+        "target_id": "M1",
+        "timestamp_offset": 69780,
+        "type": "simulated_transfer"
+      },
+      {
+        "amount_cents": 738713,
+        "device_id": null,
+        "source_id": "M1",
+        "target_id": "M2",
+        "timestamp_offset": 54540,
+        "type": "simulated_transfer"
+      },
+      {
+        "amount_cents": 723938,
+        "device_id": null,
+        "source_id": "M2",
+        "target_id": "M3",
+        "timestamp_offset": 71100,
+        "type": "simulated_transfer"
+      },
+      {
+        "amount_cents": 702219,
+        "device_id": null,
+        "source_id": "M3",
+        "target_id": "EXT-cashout",
+        "timestamp_offset": 54660,
+        "type": "simulated_transfer"
+      }
+    ],
+    "funding_cents": 836406,
+    "initial_devices": {
+      "M1": "M1-d0",
+      "M2": "M2-d0",
+      "M3": "M3-d0",
+      "SRC": "SRC-d0"
+    },
+    "malicious_label": true,
+    "opening_balances_cents": {
+      "M1": 0,
+      "M2": 0,
+      "M3": 0,
+      "SRC": 0
+    },
+    "owned_account_ids": [
+      "M1",
+      "M2",
+      "M3",
+      "SRC"
+    ],
+    "scenario_id": "search.slow_chain_3.0000",
+    "seed": 14633057887375896792,
+    "source_account_id": "SRC",
+    "split": "search",
+    "start_ts": 255780,
+    "template_id": "slow_chain_3",
+    "transactions": [
+      {
+        "amount_cents": 836406,
+        "device_id": null,
+        "from_id": "EXT-victim",
+        "ground_truth_label": "malicious",
+        "merchant_category": null,
+        "scenario_id": "search.slow_chain_3.0000",
+        "timestamp": 255780,
+        "to_id": "SRC",
+        "transaction_id": "search.slow_chain_3.0000-00000"
+      },
+      {
+        "amount_cents": 802949,
+        "device_id": "SRC-d0",
+        "from_id": "SRC",
+        "ground_truth_label": "malicious",
+        "merchant_category": null,
+        "scenario_id": "search.slow_chain_3.0000",
+        "timestamp": 325560,
+        "to_id": "M1",
+        "transaction_id": "search.slow_chain_3.0000-00001"
+      },
+      {
+        "amount_cents": 738713,
+        "device_id": "M1-d0",
+        "from_id": "M1",
+        "ground_truth_label": "malicious",
+        "merchant_category": null,
+        "scenario_id": "search.slow_chain_3.0000",
+        "timestamp": 380100,
+        "to_id": "M2",
+        "transaction_id": "search.slow_chain_3.0000-00002"
+      },
+      {
+        "amount_cents": 723938,
+        "device_id": "M2-d0",
+        "from_id": "M2",
+        "ground_truth_label": "malicious",
+        "merchant_category": null,
+        "scenario_id": "search.slow_chain_3.0000",
+        "timestamp": 451200,
+        "to_id": "M3",
+        "transaction_id": "search.slow_chain_3.0000-00003"
+      },
+      {
+        "amount_cents": 702219,
+        "device_id": "M3-d0",
+        "from_id": "M3",
+        "ground_truth_label": "malicious",
+        "merchant_category": null,
+        "scenario_id": "search.slow_chain_3.0000",
+        "timestamp": 505860,
+        "to_id": "EXT-cashout",
+        "transaction_id": "search.slow_chain_3.0000-00004"
+      }
+    ]
+  }
+}

@@ -8,12 +8,15 @@ from typing import Any
 from pydantic import BaseModel
 
 
+def _encode(obj: Any) -> Any:
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    raise TypeError(f"{type(obj).__name__} is not JSON serializable")
+
+
 def canonical_json(value: Any) -> str:
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json")
-    elif isinstance(value, (list, tuple)):
-        value = [v.model_dump(mode="json") if isinstance(v, BaseModel) else v for v in value]
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    """Sorted keys, no whitespace, ASCII only; models (also nested ones) dumped in JSON mode."""
+    return json.dumps(value, default=_encode, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def sha256_of(value: Any) -> str:
