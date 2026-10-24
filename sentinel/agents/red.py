@@ -1,11 +1,21 @@
-"""Red agent, stubbed: returns the hand-written slow-variant bypass from fixtures. No LLM."""
+"""Red agent. Recipe + recipe_to_candidate build hop-chain attacks from a few knobs; propose() is
+still a stub that returns the hand-written slow-variant bypass from fixtures. No LLM."""
 from __future__ import annotations
 
+import random
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from pydantic import Field, model_validator
+
 from sentinel.fixtures import load_bypass_trace
-from sentinel.schemas import Rule, SimulationAction
+from sentinel.schemas import MAX_ACTIONS, Model, Rule, SimulationAction
+from sentinel.sim.actions import HORIZON_S, MAX_OPENED_ACCOUNTS
+from sentinel.sim.clock import HOUR, MINUTE, rand_time
+from sentinel.sim.fraud import CASHOUT, SOURCE, Plan
+
+FORWARD_PCT = 95   # each mule forwards this much of what it received and keeps the rest
+MAX_SPLIT_GAP_MINUTES = 10   # recipe_to_candidate spaces a hop's splits 2-10 minutes apart
 
 
 @dataclass(frozen=True)
@@ -17,6 +27,71 @@ class RedCandidate:
     funding_cents: int
     actions: list[SimulationAction]
     rationale: str
+
+
+# create bounds so that a scenario doesn't get overwhelmed with > 30 actions
+class Recipe(Model):
+    """The knobs Red turns to build a hop-chain attack; frozen, so tweak() builds a new, re-validated Recipe."""
+    n_mules: int = Field(ge=1, le=MAX_OPENED_ACCOUNTS)   # mule accounts the money passes through
+    hold_hours: int = Field(ge=0, le=168)          # how long each mule holds before forwarding
+    n_splits: int = Field(ge=1, le=MAX_ACTIONS)   # transfers per hop, all to the same next account
+    new_device: bool                               # send from a newly added device (what R3 looks for)
+    funding_cents: int = Field(ge=400_000, le=900_000)   # stolen amount deposited into SRC; fraud.start()'s range
+
+    @property
+    def n_actions(self) -> int:
+        """One open per mule, n_splits transfers on each of the n_mules + 1 hops, one device change."""
+        return self.n_mules + self.n_splits * (self.n_mules + 1) + int(self.new_device)
+
+    @property
+    def duration_seconds(self) -> int:
+        """Worst case from start_ts to the last transfer: each of the n_mules + 1 hops holds, then
+        sends n_splits transfers up to MAX_SPLIT_GAP_MINUTES apart."""
+        hop = self.hold_hours * HOUR + (self.n_splits - 1) * MAX_SPLIT_GAP_MINUTES * MINUTE
+        return (self.n_mules + 1) * hop
+
+    def tweak(self, **changes) -> Recipe:
+        """A new Recipe with these fields changed, re-validated (model_copy(update=...) would skip that)."""
+        return type(self).model_validate(self.model_dump() | changes)
+
+    @model_validator(mode="after")
+    def _check(self) -> Recipe:
+        if self.n_actions > MAX_ACTIONS:
+            raise ValueError(f"recipe needs {self.n_actions} actions; a scenario allows at most {MAX_ACTIONS}")
+        if self.duration_seconds > HORIZON_S:
+            raise ValueError(f"recipe can take {self.duration_seconds / HOUR:g}h; a scenario must finish within "
+                             f"{HORIZON_S // HOUR}h of start_ts")
+        return self
+
+
+def recipe_to_candidate(recipe: Recipe, rng: random.Random) -> RedCandidate:
+    """SRC -> M1 -> ... -> Mn -> cash-out; every hop holds hold_hours, then sends n_splits transfers."""
+    # Same start_ts draw as fraud.start(), which slow_chain_3 uses; the funding comes from the recipe.
+    plan = Plan(start_ts=rand_time(rng, rng.randint(2, 18), 0, 23), funding_cents=recipe.funding_cents)
+    mules = [f"M{i + 1}" for i in range(recipe.n_mules)]
+    for m in mules:
+        plan.open(plan.start_ts, m)
+    if recipe.new_device:
+        plan.change_device(plan.start_ts, SOURCE, f"{SOURCE}-d1")  # same time as the opens, added after them
+
+    path = [SOURCE, *mules, CASHOUT]
+    t, amount = plan.start_ts, recipe.funding_cents
+    for i in range(len(path) - 1):
+        t += recipe.hold_hours * HOUR             # hold counts from the last transfer that arrived
+        amount = amount * FORWARD_PCT // 100
+        parts = [amount // recipe.n_splits] * recipe.n_splits
+        parts[-1] += amount % recipe.n_splits     # the remainder rides on the last split
+        for j, part in enumerate(parts):
+            if j:
+                t += rng.randint(2, 10) * MINUTE
+            plan.transfer(t, path[i], path[i + 1], part)
+
+    return RedCandidate(
+        template_id="recipe", start_ts=plan.start_ts, source_account_id=SOURCE,
+        funding_cents=plan.funding_cents, actions=plan.actions(),
+        rationale=(f"{recipe.n_mules} mules, {recipe.hold_hours}h holds, {recipe.n_splits} splits per hop"
+                   + (", SRC on a new device" if recipe.new_device else "")),
+    )
 
 
 def propose(objective_cents: int, rules: Sequence[Rule], turn: int) -> list[RedCandidate]:
