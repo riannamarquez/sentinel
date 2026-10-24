@@ -371,7 +371,7 @@ Each piece is done before the piece that consumes it, and nobody codes against a
 
 ## 9. Known limitations (deferred for the hackathon)
 
-- **Approval race:** two reports built on the same base version can both be approved, and the second silently drops the first one's rules (review 2.1).
+- ~~**Approval race:**~~ fixed in the walking skeleton: approve returns 409 `stale_base_version` unless the lab's active version still equals the report's base version (review 2.1).
 - **Holdout is not truly frozen:** it changes when a scenario is "shown in the UI", which the server cannot observe, so a report can refer to a holdout that has since changed (review 1.1.4).
 - **Selection on the holdout:** all of Blue's candidates are scored on the final holdout and the passing one is kept, which overstates how well the chosen patch generalizes (review 1.2.3).
 - **No authentication and Red → Blue prompt injection:** anyone who can reach `POST /approvals` can approve, and Red's free-text rationale can reach Blue's prompt (review 4.1, 4.2).
