@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from sentinel.schemas.models import Model # importing model from models.py because it is strict/effective
 from sentinel.schemas.models import Cents, Id, PositiveCents, Timestamp, Version
@@ -32,6 +32,7 @@ class TimelineNode(Model):
 
 class TimelineTransfer(Model):
     """One transfer (graph edge). Only a scored transfer can fire rules."""
+    model_config = ConfigDict(populate_by_name=True)   # merged with Model's frozen/extra="forbid"
     id: Id
     from_: Id = Field(alias="from")   # `from` is a Python keyword; dump with by_alias=True
     to: Id
