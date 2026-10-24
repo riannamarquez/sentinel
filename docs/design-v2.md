@@ -14,6 +14,8 @@ This revision keeps the v1 design and its intent. It changes only the following,
 | Build order is now scenario factory → Red → evaluator → Blue. | §8 | 5.1 |
 | One seeded RNG per component, and money stored as integer cents. | §5.1, §4 | 2.6 (minimal) |
 | `pass_through_ratio` is 0 when the window has no inflow (needed to make the feature computable). | §5.2 | 1.2.4 (partial) |
+| Baseline R2 (pass-through) also requires ≥ $5,000 sent out in the same 6 h window, which cuts its benign hits from 50% to 8%. | §4.2 | §10 feasibility |
+| `short_hold_hop_count` only counts a hop that forwards ≥ 40% of what arrived. | §5.2 | §10 feasibility |
 | Known limitations section for the deferred findings. | §9 | 2.1, 1.1.4, 1.2.3, 4.1/4.2 |
 | Feasibility result for the demo fix. | §10 | 5.2 |
 
@@ -150,7 +152,8 @@ operator  ∈ { ">=", ">", "<=", "<" }
     {"feature_key": "velocity_out_count", "operator": ">=", "threshold": 5, "window_hours": 1}
   ]},
   {"rule_id": "R2", "all_of": [
-    {"feature_key": "pass_through_ratio", "operator": ">=", "threshold": 0.9, "window_hours": 6}
+    {"feature_key": "pass_through_ratio", "operator": ">=", "threshold": 0.9, "window_hours": 6},
+    {"feature_key": "velocity_out_amount", "operator": ">=", "threshold": 500000, "window_hours": 6}
   ]},
   {"rule_id": "R3", "all_of": [
     {"feature_key": "new_device_before_transfer", "operator": ">=", "threshold": 1, "params": {"n_hours": 24}},
@@ -160,6 +163,8 @@ operator  ∈ { ">=", ">", "<=", "<" }
 ```
 
 R3 reads: "the outgoing transfer is made from a device first seen less than 24 hours ago, **and** it is for at least $1,000.00." In v1's format this had to be two separate rules, which would fire on every large transfer and on every transfer from a new device.
+
+R2 reads: "at least 90% of what came in over the last 6 hours went back out, **and** at least $5,000.00 went out in those 6 hours." v1 had only the ratio, which fired on any account that spends what it just received. In the feasibility run (§10), that was half of all benign households, mostly gig workers and small businesses. The amount condition limits R2 to mule-sized sums. It is a window total rather than a single-transfer minimum, so splitting the money into several smaller transfers within the window does not get around it.
 
 `RulePatch` uses the same `all_of` list. Blue's validation (§6) checks every condition: the feature_key is known, the operator is allowlisted, the threshold is within the feature's bounds, `window_hours` is ≤ 168, and there are at most 3 conditions.
 
@@ -212,7 +217,7 @@ f(view: HistoryView, window_hours: int, params: dict) -> float
 | near_threshold_amount | Count of amounts within 10% below a reporting threshold | Yes |
 | pass_through_ratio | Cents out / cents in over the window. **v2: 0 when there is no inflow in the window.** | Yes |
 | min_hold_hours | Shortest time money sat before leaving | Yes |
-| short_hold_hop_count | Longest chain of consecutive transfers ending at the scored one, where each transfer leaves less than 24 h after the previous one arrived. A time-respecting walk. | Yes, the demo fix |
+| short_hold_hop_count | Longest chain of consecutive transfers ending at the scored one, where each transfer leaves less than 24 h after the previous one arrived **and forwards at least 40% of that amount** (the same money moving on). A time-respecting walk. Params `hold_hours` (24), `min_carry_pct` (40). | Yes, the demo fix |
 | account_age_hours | Age of the account at transfer time | Stretch |
 
 ### 5.3 Detector and the no-lookahead rule **(v2)**
@@ -364,23 +369,36 @@ Each piece is done before the piece that consumes it, and nobody codes against a
 - **Holdout is not truly frozen:** it changes when a scenario is "shown in the UI", which the server cannot observe, so a report can refer to a holdout that has since changed (review 1.1.4).
 - **Selection on the holdout:** all of Blue's candidates are scored on the final holdout and the passing one is kept, which overstates how well the chosen patch generalizes (review 1.2.3).
 - **No authentication and Red → Blue prompt injection:** anyone who can reach `POST /approvals` can approve, and Red's free-text rationale can reach Blue's prompt (review 4.1, 4.2).
+- **Opening-balance funding evades pass-through:** `pass_through_ratio` is 0 when nothing came in during the window, so an account that sends money it already held (for example, its opening balance) never trips R2.
+- **Low-carry hops evade the hop-count fix:** fraud that forwards less than 40% of what arrived at each hop (for example, by splitting it many ways) does not extend a `short_hold_hop_count` chain.
+- **Baseline FPR is still above 15%:** v1 flags 21–26% of benign households. R1 velocity alone flags 18%, from student bill-splitting and small-business payroll (§10).
 
 ## 10. Feasibility of the demo fix (no LLM)
 
-`scripts/feasibility.py` checks the riskiest assumption in the demo (review 5.2): that a `short_hold_hop_count` rule catches the slow mule variants without exceeding the FPR budget. It uses only the standard library and no LLM. It generates 500 seeded benign households (the four segments, including households where a parent forwards an allowance on payday and a dependent relays part of it to a sibling) and 48 hand-written hop-chain fraud scenarios (6 templates × 8 seeded copies). It then scores them with baseline v1 and with v1 plus `R4 = short_hold_hop_count >= 4 (window 72h, hold < 24h)`.
+`scripts/feasibility.py` checks the riskiest assumption in the demo (review 5.2): that a `short_hold_hop_count` rule catches the slow mule variants without exceeding the FPR budget. It uses only the standard library and no LLM.
 
-Result on seed 7:
+- **Data:** 500 seeded benign households across the four segments, including households where a parent forwards an allowance on payday and a dependent relays part of it to a sibling. Also 48 hand-written hop-chain fraud scenarios (6 templates × 8 seeded copies).
+- **Rules:** baseline v1 (§4.2, with the tuned R2), and v1 plus `R4 = short_hold_hop_count >= 4` (window 72 h, each hold < 24 h, each hop forwards ≥ 40%).
 
-| | baseline v1 | v1 + R4 |
-|---|---|---|
-| Attack recall | 8/48 (16.7%) | 32/48 (66.7%) |
-| Benign FPR | 285/500 (57.0%) | 285/500 (57.0%) |
+Results on all 11 seeds:
 
-All four gates **pass**: +0 false positives against a budget of 2, no regression loss, +24 attacks caught, schema valid. R4 misses the two templates it was expected to miss: a chain where one mule holds the money for more than 24 h, and a chain with a single mule.
+| Seed | v1 benign flagged | Fix new FPs | Budget | Fraud caught (v1 → v1 + R4) | Gate |
+|---|---|---|---|---|---|
+| 7 | 121/500 (24.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1000 | 108/500 (21.6%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1001 | 124/500 (24.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1002 | 129/500 (25.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1003 | 119/500 (23.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1004 | 112/500 (22.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1005 | 124/500 (24.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1006 | 120/500 (24.0%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1007 | 103/500 (20.6%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1008 | 111/500 (22.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1009 | 112/500 (22.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
+
+The fix passes every gate on all 11 seeds. R4 flags no benign household on any seed: the 40% carry rule breaks the payday → allowance → sibling chains that caused 0–3 false positives per seed before. R4 misses the two templates it was expected to miss: a chain where one mule holds the money for more than 24 h, and a chain with a single mule. Dropping to k = 3 also passes on seed 7, at 48/48.
 
 Caveats:
 
-- **The margin is thin.** On 10 other seeds, R4 adds 0–3 benign false positives and fails the gate on 2 of them, each time by 1 false positive. Every one comes from the sibling-relay household (payday → allowance → sibling → purchase, all within 24 h). Freeze a seed that passes for the demo, or change the feature (next point).
-- **What makes it robust:** count a hop only if it forwards at least 40% of what arrived ("the same money is moving"). In a trial run, this gave 0 benign false positives on all 11 seeds with the same recall, and it also let k = 3 pass at 100% recall. The trade-off: a Red that forwards less than 40% per hop evades it. This variant was tested, but it is not in the committed script.
-- **Baseline v1 is very noisy:** it flags 57% of benign households. R2 (`pass_through_ratio >= 0.9` in 6 h) alone flags 50%, mostly gig workers and small businesses spending money soon after receiving it. R1 (velocity) flags 18%, from small-business payroll runs and students splitting bills. R4's own benign hits are all in salaried households, which the baseline rarely flags, so the high baseline is **not** hiding R4's false positives. It does make the "before" FPR on screen look bad, so tune R2 before the demo.
-- **The recall is by construction:** the fraud scenarios are hand-written, so recall reflects the templates I chose. The meaningful output is the FPR side, which depends on how realistic the benign generator is.
+- **The baseline is still above the 15% target.** Tuning R2 cut its own benign hits from 50% to 8% on seed 7, and the baseline from 57% to 21–26%. The rest comes from R1 velocity (18%: student bill-splitting and small-business payroll) and R3 (3%). With R2 removed entirely, the baseline would still flag 20–22%. A trial (not committed) of R1 AND `velocity_out_amount >= $1,000 in 1h` brings the baseline to 13–17%. What is left is small businesses, which legitimately move large sums quickly.
+- **The recall is by construction:** the fraud scenarios are hand-written, so recall reflects the templates chosen. The meaningful output is the FPR side, which depends on how realistic the benign generator is.

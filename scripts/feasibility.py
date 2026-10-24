@@ -354,6 +354,11 @@ def f_velocity_out_count(v: HistoryView, window_h: int, p: dict) -> float:
     return sum(1 for x in v.txns if x.from_id == a and x.ts > lo)
 
 
+def f_velocity_out_amount(v: HistoryView, window_h: int, p: dict) -> float:
+    a, lo = v.scored.from_id, v.scored.ts - window_h * HOUR
+    return sum(x.amount_cents for x in v.txns if x.from_id == a and x.ts > lo)
+
+
 def f_pass_through_ratio(v: HistoryView, window_h: int, p: dict) -> float:
     a, lo = v.scored.from_id, v.scored.ts - window_h * HOUR
     out = sum(x.amount_cents for x in v.txns if x.from_id == a and x.ts > lo)
@@ -374,22 +379,26 @@ def f_transfer_amount(v: HistoryView, window_h: int, p: dict) -> float:
 
 
 def f_short_hold_hop_count(v: HistoryView, window_h: int, p: dict) -> float:
-    """Longest chain of transfers ending at the scored one, each sent < hold_hours after the
-    previous one arrived. Time-respecting DP over the window, in timestamp order."""
+    """Longest chain of transfers ending at the scored one, where each transfer is sent
+    < hold_hours after the previous one arrived and forwards >= min_carry_pct of its amount
+    (the same money moving on). Time-respecting DP over the window, in timestamp order."""
     lo, hold_s = v.scored.ts - window_h * HOUR, p.get("hold_hours", 24) * HOUR
-    arrivals: dict[str, list[tuple[int, int]]] = defaultdict(list)  # account -> [(ts, hops)]
+    carry = p.get("min_carry_pct", 40)
+    arrivals: dict[str, list[tuple[int, int, int]]] = defaultdict(list)  # account -> [(ts, hops, cents)]
     for x in v.txns:
         if x.ts <= lo:
             continue
-        hops = 1 + max((h for ts, h in arrivals[x.from_id] if x.ts - ts < hold_s), default=0)
+        hops = 1 + max((h for ts, h, cents in arrivals[x.from_id]
+                        if x.ts - ts < hold_s and x.amount_cents * 100 >= cents * carry), default=0)
         if x is v.scored:
             return hops
-        arrivals[x.to_id].append((x.ts, hops))
+        arrivals[x.to_id].append((x.ts, hops, x.amount_cents))
     raise AssertionError("scored transaction missing from its own history view")
 
 
 FEATURES = {
     "velocity_out_count": f_velocity_out_count,
+    "velocity_out_amount": f_velocity_out_amount,
     "pass_through_ratio": f_pass_through_ratio,
     "new_device_before_transfer": f_new_device_before_transfer,
     "transfer_amount": f_transfer_amount,
@@ -424,7 +433,11 @@ class Rule:
 
 BASELINE_V1 = (
     Rule("R1", (Condition("velocity_out_count", ">=", 5, 1),)),
-    Rule("R2", (Condition("pass_through_ratio", ">=", 0.9, 6),)),
+    # Pass-through only counts when a mule-sized sum moves: >= $5,000 out in the same 6h window.
+    Rule("R2", (
+        Condition("pass_through_ratio", ">=", 0.9, 6),
+        Condition("velocity_out_amount", ">=", 500_000, 6),
+    )),
     Rule("R3", (
         Condition("new_device_before_transfer", ">=", 1, 0, (("n_hours", 24),)),
         Condition("transfer_amount", ">=", 100_000),
@@ -433,7 +446,8 @@ BASELINE_V1 = (
 
 
 def hop_rule(k: int) -> Rule:
-    return Rule("R4", (Condition("short_hold_hop_count", ">=", k, 72, (("hold_hours", 24),)),))
+    return Rule("R4", (Condition("short_hold_hop_count", ">=", k, 72,
+                                 (("hold_hours", 24), ("min_carry_pct", 40))),))
 
 
 # --- Detector: online, one HistoryView per outgoing transaction -----------------------
@@ -552,7 +566,8 @@ def main() -> int:
     print("Sentinel feasibility check (no LLM)")
     print(f"seed={args.seed}  benign={ev.n_benign}  attack={ev.n_attack}  "
           f"dataset sha256={dataset_hash(scenarios)[:16]}")
-    print(f"Fix under test: R4 = short_hold_hop_count >= {args.k} (window 72h, each hold < 24h), OR'ed onto v1")
+    print(f"Fix under test: R4 = short_hold_hop_count >= {args.k} (window 72h, each hold < 24h, "
+          f"each hop forwards >= 40%), OR'ed onto v1")
     print("Lookahead check: passed (every alert reproduces with the trace cut at the alert time)\n")
 
     print(f"{'':22}{'baseline v1':>18}{'v1 + R4':>18}")
@@ -610,16 +625,22 @@ def main() -> int:
         print(f"  {k:>3}  {nf:>8}  {100 * nf / e.n_benign:>7.2f}%  {pct(len(e.cand_tp), e.n_attack):>16}  "
               f"{mark(e.passed())}")
 
-    print(f"\nRobustness: k={args.k} on {args.robustness_seeds} other seeds")
+    seeds = [args.seed, *range(1000, 1000 + args.robustness_seeds)]
+    print(f"\nAll seeds, k={args.k}")
+    print(f"  {'seed':>5}  {'v1 benign flagged':>18}  {'fix new FPs':>11}  {'budget':>6}  "
+          f"{'R4 alone':>8}  {'fraud caught v1 -> v1+R4':>24}  gate")
     results = []
-    for seed in range(1000, 1000 + args.robustness_seeds):
-        sc, bf, hm = run(seed, args.benign, args.attack_copies, args.k, verify=False)
-        e = evaluate(sc, bf, hm, args.k)
+    for seed in seeds:
+        if seed == args.seed:
+            sc, bf, hm, e = scenarios, base_flags, hop_max, ev
+        else:
+            sc, bf, hm = run(seed, args.benign, args.attack_copies, args.k, verify=False)
+            e = evaluate(sc, bf, hm, args.k)
         results.append(e.passed())
         r4 = sum(1 for s in sc if not s.malicious and hm[s.scenario_id] >= args.k)
-        print(f"  seed {seed}: +{len(e.cand_fp) - len(e.base_fp)} FPs (budget {e.fp_budget}), "
-              f"R4 alone {r4} benign, "
-              f"recall {pct(len(e.cand_tp), e.n_attack)}  {mark(e.passed())}")
+        caught = f"{len(e.base_tp)}/{e.n_attack} -> {len(e.cand_tp)}/{e.n_attack}"
+        print(f"  {seed:>5}  {pct(len(e.base_fp), e.n_benign):>18}  {len(e.cand_fp) - len(e.base_fp):>11}  "
+              f"{e.fp_budget:>6}  {r4:>8}  {caught:>24}  {mark(e.passed())}")
     print(f"  passed on {sum(results)}/{len(results)} seeds")
 
     return 0 if ev.passed() else 1
