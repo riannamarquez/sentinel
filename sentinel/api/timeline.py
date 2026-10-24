@@ -9,6 +9,7 @@ This file will hold models
 # has finished being defined. Without this, Python would complain the name doesn't exist yet.
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -23,6 +24,7 @@ from sentinel.schemas.models import Model # importing model from models.py becau
 #   Timestamp     = int seconds from 0 up to one simulated year
 #   Version       = detector version number, 1 or higher
 from sentinel.schemas.models import Cents, Id, PositiveCents, Timestamp, Version
+from sentinel.sim.actions import is_external, moved_out_cents   # EXT-* check; cents that reached an EXT-* account
 
 
 class TimelineNode(Model):
@@ -129,8 +131,9 @@ def build_timeline(scenario: Scenario, rules: Sequence[Rule], *, lab_id: str, ru
         nodes.append(TimelineNode(id="OTHER", role="cluster", count=background_accounts))
 
     fired = dict(score.timeline(scenario, rules))   # scored transfers only, no lookahead
+    # The alias means input must use the JSON name "from", not from_; ** passes it as a keyword.
     transfers = [
-        TimelineTransfer(id=t.transaction_id, from_=t.from_id, to=t.to_id, amount_cents=t.amount_cents,
+        TimelineTransfer(id=t.transaction_id, **{"from": t.from_id}, to=t.to_id, amount_cents=t.amount_cents,
                          t_offset_s=t.timestamp - scenario.start_ts, scored=t.transaction_id in fired,
                          rules_fired=list(fired.get(t.transaction_id, ())))
         for t in sorted(scenario.transactions, key=lambda t: (t.timestamp, t.transaction_id))
