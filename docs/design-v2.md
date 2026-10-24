@@ -116,15 +116,15 @@ All schemas are Pydantic models in one shared `schemas/` package. They are expor
 
 | Entity | Key fields | Written by | Notes |
 |---|---|---|---|
-| `BankConfig` | lab_id, seed, account_count, simulation_days, customer_segments, initial_balance_range_cents, detector_version | API (create lab) / Builder | Immutable once a run starts |
+| `BankConfig` | lab_id, seed, account_count, simulation_days, customer_segments, initial_balance_range_cents, detector_version, holdout_benign_n, holdout_attack_copies | API (create lab) / Builder | Immutable once a run starts. Holdout sizes are new in v2 (default 500 / 8, see §10). |
 | `Customer` | customer_id, segment, income_band, device_ids | Sim engine | Segments: salaried, gig, student, small business |
 | `Account` | account_id, customer_id, created_at, balance_cents, risk_tags | Sim engine | Balance never below 0 |
 | `Transaction` | transaction_id, from_id, to_id, amount_cents, timestamp, device_id, merchant_category?, scenario_id, ground_truth_label | Sim engine | Label hidden from Red and Blue |
-| `SimulationAction` | type (open_synthetic_account, simulated_transfer, change_simulated_device, wait), timestamp_offset, source_id?, target_id?, amount_cents? | Red / fixtures | Allowlisted enum only |
-| `Scenario` | scenario_id, template_id, seed, actions[], malicious_label, split (search, regression, final_holdout), owned_account_ids[] | Red / scenario factory | Exposed holdouts retire into regression. `owned_account_ids` is new in v2, see §6.2. |
+| `SimulationAction` | type (open_synthetic_account, simulated_transfer, change_simulated_device, wait), timestamp_offset (seconds after the previous action), source_id?, target_id?, amount_cents?, device_id? | Red / fixtures | Allowlisted enum only. `device_id` (v2) is the new device for change_simulated_device. |
+| `Scenario` | scenario_id, template_id, seed, actions[], malicious_label, split (search, regression, final_holdout), owned_account_ids[], start_ts, source_account_id?, funding_cents, opening_balances_cents{}, initial_devices{}, transactions[] | Red / scenario factory | Exposed holdouts retire into regression. Fields after `split` are new in v2: §6.2 needs owned accounts, and storing the materialized transactions makes fixtures self-contained. A malicious scenario's stolen amount (`funding_cents`) lands in `source_account_id` at `start_ts`. |
 | `DetectionResult` | scenario_id, detector_version, alert, triggered_rule_ids[], features{}, first_alert_time? | Detector | Feature snapshot kept for the UI |
 | `RulePatch` | patch_id, base_version, operation (add, modify, disable), rule_id, all_of[] (conditions, see §4.2), rationale | Blue | feature_key and operator allowlisted in every condition |
-| `EvaluationReport` | run_id, baseline_version, candidate_version, benign_n, attack_n, dataset_hashes, recall_before/after, fpr_before/after, regression_pass, holdout_pass, gate_pass, eligible_for_approval | Evaluator | Only source of metrics in the UI |
+| `EvaluationReport` | report_id, run_id, patch_id, baseline_version, candidate_version, candidate_rules_hash, benign_n, attack_n, dataset_hashes, baseline_confusion / candidate_confusion (tp, fp, tn, fn per split), recall_before/after, fpr_before/after, regression_pass, holdout_pass, gate_pass, gate_results[], eligible_for_approval | Evaluator | Only source of metrics in the UI. Confusion counts and gate_results are new in v2 (review 1.2.6). |
 | `AuditEvent` | event_id, timestamp, actor, run_id, action, input_hash, output_hash, version_before, version_after | Every state change | Append-only |
 
 **Storage:** SQLite with one table per entity, plus a `runs` table holding the state-machine status. Large blobs (traces, feature snapshots) are JSON columns. Detector versions are rows in `detector_versions` (version, rules_json, parent_version, created_by_event_id) and are never updated in place.
@@ -382,28 +382,28 @@ Each piece is done before the piece that consumes it, and nobody codes against a
 
 `scripts/feasibility.py` checks the riskiest assumption in the demo (review 5.2): that a `short_hold_hop_count` rule catches the slow mule variants without exceeding the FPR budget. It uses only the standard library and no LLM.
 
-- **Data:** 500 seeded benign households across the four segments, including households where a parent forwards an allowance on payday and a dependent relays part of it to a sibling. Also 48 hand-written hop-chain fraud scenarios (6 templates × 8 seeded copies).
+- **Data:** the scenario factory's final holdout for each seed: 500 seeded benign households across the four segments (including households where a parent forwards an allowance on payday and a dependent relays part of it to a sibling), and 48 hand-written hop-chain fraud scenarios (6 templates × 8 seeded copies) that go through the same action validator as Red's output. Households cannot overdraw: a payment an account cannot cover is dropped.
 - **Rules:** baseline v1 (§4.2, with the tuned R1 and R2), and v1 plus `R4 = short_hold_hop_count >= 4` (window 72 h, each hold < 24 h, each hop forwards ≥ 40%).
 
 Results on all 11 seeds (also in [feasibility-results.md](feasibility-results.md)):
 
 | Seed | v1 benign flagged | Fix new FPs | Budget | Fraud caught (v1 → v1 + R4) | Gate |
 |---|---|---|---|---|---|
-| 7 | 61/500 (12.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1000 | 59/500 (11.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1001 | 51/500 (10.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1002 | 64/500 (12.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1003 | 56/500 (11.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1004 | 52/500 (10.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1005 | 61/500 (12.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1006 | 56/500 (11.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1007 | 47/500 (9.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1008 | 55/500 (11.0%) | 0 | 2 | 8/48 → 32/48 | PASS |
-| 1009 | 54/500 (10.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 7 | 49/500 (9.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1000 | 25/500 (5.0%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1001 | 32/500 (6.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1002 | 36/500 (7.2%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1003 | 34/500 (6.8%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1004 | 32/500 (6.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1005 | 25/500 (5.0%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1006 | 32/500 (6.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1007 | 42/500 (8.4%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1008 | 43/500 (8.6%) | 0 | 2 | 8/48 → 32/48 | PASS |
+| 1009 | 35/500 (7.0%) | 0 | 2 | 8/48 → 32/48 | PASS |
 
 The fix passes every gate on all 11 seeds. R4 flags no benign household on any seed: the 40% carry rule breaks the payday → allowance → sibling chains that caused 0–3 false positives per seed before. R4 misses the two templates it was expected to miss: a chain where one mule holds the money for more than 24 h, and a chain with a single mule. Dropping to k = 3 also passes on seed 7, at 48/48.
 
 Caveats:
 
-- **Baseline:** v1 now flags 9.4–12.8% of benign households (it was 57% before tuning), and all of them are small businesses: R1 on payroll runs to 5 or more employees, and R3 on large payments made from a new device. R2 flags no benign household, and in this data it catches no fraud that R1 does not also catch. The golden fast ring is still caught by R1, and the slow variants still get past the baseline, so the demo story holds.
+- **Baseline:** v1 now flags 5.0–9.8% of benign households (it was 57% before tuning), and all of them are small businesses: R1 on payroll runs to 5 or more employees, and R3 on large payments made from a new device. R2 flags no benign household, and in this data it catches no fraud that R1 does not also catch. The golden fast ring is still caught by R1, and the slow variants still get past the baseline, so the demo story holds.
 - **The recall is by construction:** the fraud scenarios are hand-written, so recall reflects the templates chosen. The meaningful output is the FPR side, which depends on how realistic the benign generator is.

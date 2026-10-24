@@ -2,7 +2,7 @@
 UV ?= uv
 PORT ?= 8000
 
-.PHONY: install test feasibility fixtures run
+.PHONY: install test feasibility feasibility-results fixtures run
 
 install:
 	$(UV) sync --frozen
@@ -12,6 +12,9 @@ test: install
 
 feasibility: install
 	$(UV) run --frozen python scripts/feasibility.py
+
+feasibility-results: install
+	sh scripts/write_feasibility_results.sh
 
 fixtures: install
 	$(UV) run --frozen python scripts/make_fixtures.py
