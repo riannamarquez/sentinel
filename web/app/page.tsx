@@ -8,6 +8,22 @@ type BaselineResult = {
   alert: boolean;
   triggered_rule_ids: string[];
 };
+type ConditionDiagnosis = {
+  feature_key: string;
+  operator: string;
+  threshold: number;
+  closest_value: number;
+  held: boolean;
+};
+type Bypass = {
+  bypass_id: string;
+  scenario: { transactions: unknown[] };
+  moved_cents: number;
+  objective_cents: number;
+  why_it_worked: { rule_id: string; conditions: ConditionDiagnosis[] }[];
+  rationale: string;
+};
+type RedRun = { run_id: string; turns: number; bypass: Bypass | null };
 
 // Plain-English names for the three example cases the backend scores.
 const CASES: Record<string, { label: string; isFraud: boolean; blurb: string }> = {
@@ -21,12 +37,39 @@ function caseInfo(id: string) {
   return key ? CASES[key] : { label: id, isFraud: true, blurb: "" };
 }
 
+// Plain-English names for the detector's feature keys.
+const FEATURES: Record<string, string> = {
+  velocity_out_count: "Transfers out in the window",
+  velocity_out_amount: "Money sent out in the window",
+  velocity_in_amount: "Money received in the window",
+  new_device_before_transfer: "New device right before transfer",
+  transfer_amount: "Size of a single transfer",
+  near_threshold_amount: "Transfers just under the reporting limit",
+  pass_through_ratio: "Share of incoming money passed on",
+  min_hold_hours: "Shortest time money sat in an account (hours)",
+  short_hold_hop_count: "Quick hops through accounts",
+};
+const AMOUNT_FEATURES = new Set(["velocity_out_amount", "velocity_in_amount", "transfer_amount"]);
+const OPERATORS: Record<string, string> = { ">=": "≥", ">": ">", "<=": "≤", "<": "<" };
+
+function dollars(cents: number) {
+  return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function formatFeature(key: string, value: number) {
+  if (AMOUNT_FEATURES.has(key)) return dollars(value);
+  if (key === "pass_through_ratio") return `${Math.round(value * 100)}%`;
+  if (key === "new_device_before_transfer") return value >= 1 ? "Yes" : "No";
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 export default function Home() {
   const [seed, setSeed] = useState(7);
   const [accounts, setAccounts] = useState(200);
   const [labId, setLabId] = useState<string | null>(null);
   const [world, setWorld] = useState<World | null>(null);
   const [baseline, setBaseline] = useState<BaselineResult[] | null>(null);
+  const [redRun, setRedRun] = useState<RedRun | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,6 +77,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setBaseline(null);
+    setRedRun(null);
     try {
       const res = await fetch("/api/labs", {
         method: "POST",
@@ -66,6 +110,28 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  async function runRed() {
+    if (!labId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/labs/${labId}/red-runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(`Red challenge failed (${res.status})`);
+      const data = await res.json();
+      setRedRun({ run_id: data.run_id, turns: data.turns, bypass: data.bypass });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const bypass = redRun?.bypass;
 
   return (
     <main className="min-h-screen bg-slate-50 p-8 text-slate-900">
@@ -134,6 +200,74 @@ export default function Home() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Step 3: Red challenge */}
+      {labId && baseline && (
+        <section className="mb-6 rounded-xl border bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">3. Let Red try to sneak money past the rules</h2>
+            <button onClick={runRed} disabled={loading}
+              className="rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-50">
+              Start Red challenge
+            </button>
+          </div>
+
+          {redRun && !bypass && (
+            <p className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">
+              Red tried {redRun.turns} times and couldn&apos;t get past the rules.
+            </p>
+          )}
+
+          {bypass && (
+            <div className="space-y-4">
+              <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4">
+                <p className="text-2xl font-bold text-red-700">{dollars(bypass.moved_cents)} escaped undetected</p>
+                <p className="mt-1 text-sm text-red-900">
+                  Goal: {dollars(bypass.objective_cents)} · Succeeded on try {redRun.turns} ·{" "}
+                  {bypass.scenario.transactions.length} transfers · no alarm fired
+                </p>
+              </div>
+
+              <div className="rounded-lg border bg-slate-50 p-4">
+                <h3 className="mb-1 text-sm font-semibold">Red&apos;s plan</h3>
+                <p className="text-sm text-slate-700">{bypass.rationale}</p>
+              </div>
+
+              <div>
+                <h3 className="mb-1 font-semibold">Why every rule stayed silent</h3>
+                <p className="mb-2 text-xs text-slate-500">
+                  A rule only fires when all of its checks are met. Red rows are checks the attack never tripped.
+                </p>
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="py-2 pr-4">Rule</th>
+                      <th className="py-2 pr-4">Check</th>
+                      <th className="py-2 pr-4">Fires at</th>
+                      <th className="py-2">Attack&apos;s closest</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bypass.why_it_worked.flatMap((rule) =>
+                      rule.conditions.map((c, i) => (
+                        <tr key={`${rule.rule_id}-${i}`}
+                          className={`border-b ${c.held ? "bg-red-50 text-red-900" : ""}`}>
+                          <td className="py-2 pr-4 font-mono text-xs">{i === 0 ? rule.rule_id : ""}</td>
+                          <td className="py-2 pr-4">{FEATURES[c.feature_key] ?? c.feature_key}</td>
+                          <td className="py-2 pr-4">
+                            {OPERATORS[c.operator] ?? c.operator} {formatFeature(c.feature_key, c.threshold)}
+                          </td>
+                          <td className="py-2">{formatFeature(c.feature_key, c.closest_value)}</td>
+                        </tr>
+                      )),
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </section>
