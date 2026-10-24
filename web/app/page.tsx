@@ -24,6 +24,33 @@ type Bypass = {
   rationale: string;
 };
 type RedRun = { run_id: string; turns: number; bypass: Bypass | null };
+type Condition = {
+  feature_key: string;
+  operator: string;
+  threshold: number;
+  window_hours?: number | null;
+  params?: Record<string, number>;
+};
+type RulePatch = {
+  patch_id: string;
+  operation: "add" | "modify" | "disable";
+  rule_id: string | null;
+  all_of: Condition[] | null;
+  rationale: string;
+};
+type PatchResult = { patch: RulePatch; valid: boolean; error: string | null };
+type PatchRun = { state: string; patches: PatchResult[] };
+type Confusion = { tp: number; fp: number; tn: number; fn: number };
+type GateResult = { name: string; passed: boolean; detail: string };
+type EvaluationReport = {
+  report_id: string;
+  benign_n: number;
+  attack_n: number;
+  baseline_confusion: Record<string, Confusion>;
+  candidate_confusion: Record<string, Confusion>;
+  gate_results: GateResult[];
+  eligible_for_approval: boolean;
+};
 
 // Plain-English names for the three example cases the backend scores.
 const CASES: Record<string, { label: string; isFraud: boolean; blurb: string }> = {
@@ -63,6 +90,61 @@ function formatFeature(key: string, value: number) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+// "4+", "more than 4", "at most 4", "under 4" depending on the operator.
+function compare(op: string, v: string) {
+  return { ">=": `${v}+`, ">": `more than ${v}`, "<=": `at most ${v}`, "<": `under ${v}` }[op] ?? `${op} ${v}`;
+}
+
+function describeCondition(c: Condition) {
+  const p = c.params ?? {};
+  const within = c.window_hours ? ` within ${c.window_hours} hours` : "";
+  const t = c.threshold;
+  switch (c.feature_key) {
+    case "velocity_out_count":
+      return `an account sends ${compare(c.operator, String(t))} transfers${within}`;
+    case "velocity_out_amount":
+      return `an account sends out ${compare(c.operator, dollars(t))}${within}`;
+    case "velocity_in_amount":
+      return `an account receives ${compare(c.operator, dollars(t))}${within}`;
+    case "pass_through_ratio":
+      return `an account passes on ${compare(c.operator, `${Math.round(t * 100)}%`)} of the money it received${within}`;
+    case "new_device_before_transfer": {
+      const hours = p.n_hours ?? 24;
+      return c.operator.startsWith(">")
+        ? `a new device logs in within ${hours} hours before the transfer`
+        : `no new device logs in within ${hours} hours before the transfer`;
+    }
+    case "transfer_amount":
+      return `a single transfer is ${compare(c.operator, dollars(t))}`;
+    case "near_threshold_amount":
+      return `an account makes ${compare(c.operator, String(t))} transfers just under the ${dollars(p.reporting_threshold_cents ?? 1_000_000)} reporting limit${within}`;
+    case "min_hold_hours":
+      return `money sits in an account for ${compare(c.operator, `${t} hours`)} before moving on${within}`;
+    case "short_hold_hop_count":
+      return `money passes through ${compare(c.operator, String(t))} accounts in a row${within}, each holding it under ${p.hold_hours ?? 24} hours and forwarding at least ${p.min_carry_pct ?? 40}%`;
+    default:
+      return `${c.feature_key} ${OPERATORS[c.operator] ?? c.operator} ${t}${within}`;
+  }
+}
+
+function describeRule(all_of: Condition[]) {
+  return `Alarm if ${all_of.map(describeCondition).join(", and ")}.`;
+}
+
+const GATES: Record<string, string> = {
+  schema_valid: "The fix is a well-formed rule",
+  fpr_budget: "Doesn't flag too many new normal customers",
+  regression_no_loss: "Still catches every attack the old rules caught",
+  regression_benign: "Doesn't flag more lookalike normal customers",
+  holdout_recall_gain: "Catches more unseen attacks than before",
+};
+
+function fraction(n: number, d: number) {
+  return `${n} / ${d} (${d ? Math.round((n / d) * 100) : 0}%)`;
+}
+
+const OPERATION_LABELS: Record<string, string> = { add: "+ New rule", modify: "Modify rule", disable: "Disable rule" };
+
 export default function Home() {
   const [seed, setSeed] = useState(7);
   const [accounts, setAccounts] = useState(200);
@@ -70,6 +152,9 @@ export default function Home() {
   const [world, setWorld] = useState<World | null>(null);
   const [baseline, setBaseline] = useState<BaselineResult[] | null>(null);
   const [redRun, setRedRun] = useState<RedRun | null>(null);
+  const [patchRun, setPatchRun] = useState<PatchRun | null>(null);
+  const [patchId, setPatchId] = useState<string | null>(null);
+  const [report, setReport] = useState<EvaluationReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +163,9 @@ export default function Home() {
     setError(null);
     setBaseline(null);
     setRedRun(null);
+    setPatchRun(null);
+    setPatchId(null);
+    setReport(null);
     try {
       const res = await fetch("/api/labs", {
         method: "POST",
@@ -115,6 +203,9 @@ export default function Home() {
     if (!labId) return;
     setLoading(true);
     setError(null);
+    setPatchRun(null);
+    setPatchId(null);
+    setReport(null);
     try {
       const res = await fetch(`/api/labs/${labId}/red-runs`, {
         method: "POST",
@@ -131,7 +222,50 @@ export default function Home() {
     }
   }
 
+  async function askBlue() {
+    if (!labId || !redRun?.bypass) return;
+    setLoading(true);
+    setError(null);
+    setReport(null);
+    try {
+      const res = await fetch(`/api/labs/${labId}/patches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: redRun.run_id, bypass_id: redRun.bypass.bypass_id }),
+      });
+      if (!res.ok) throw new Error(`Blue fix failed (${res.status})`);
+      const data = await res.json();
+      setPatchRun({ state: data.state, patches: data.patches });
+      setPatchId(data.patches.find((p: PatchResult) => p.valid)?.patch.patch_id ?? null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function evaluate() {
+    if (!labId || !redRun || !patchId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/labs/${labId}/evaluations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: redRun.run_id, patch_id: patchId }),
+      });
+      if (!res.ok) throw new Error(`Evaluation failed (${res.status})`);
+      setReport(await res.json());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const bypass = redRun?.bypass;
+  const before = report?.baseline_confusion.final_holdout;
+  const after = report?.candidate_confusion.final_holdout;
 
   return (
     <main className="min-h-screen bg-slate-50 p-8 text-slate-900">
@@ -268,6 +402,105 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Step 4: Blue fix */}
+      {labId && bypass && (
+        <section className="mb-6 rounded-xl border bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">4. Ask Blue to close the gap</h2>
+            <button onClick={askBlue} disabled={loading}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50">
+              Ask Blue for a fix
+            </button>
+          </div>
+
+          {patchRun?.state === "failed" && (
+            <p className="mb-4 rounded-lg border-2 border-red-300 bg-red-50 p-4 text-sm text-red-900">
+              Blue couldn&apos;t propose a valid fix. Every suggestion below was rejected before testing.
+            </p>
+          )}
+
+          {patchRun && (
+            <div className="grid gap-4 md:grid-cols-3">
+              {patchRun.patches.map(({ patch, valid, error: patchError }) => (
+                <div key={patch.patch_id}
+                  className={`rounded-lg border-2 p-4 ${valid ? "border-blue-200 bg-blue-50" : "border-red-300 bg-red-50"}`}>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-blue-900">
+                      {OPERATION_LABELS[patch.operation] ?? patch.operation}
+                      {patch.rule_id && patch.operation !== "add" ? ` ${patch.rule_id}` : ""}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${valid ? "bg-emerald-200 text-emerald-900" : "bg-red-200 text-red-900"}`}>
+                      {valid ? "✓ Valid" : `✗ ${patchError}`}
+                    </span>
+                  </div>
+                  {patch.all_of && <p className="mb-2 font-medium">{describeRule(patch.all_of)}</p>}
+                  <p className="text-sm text-slate-600">{patch.rationale}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Step 5: Evaluate */}
+      {labId && patchId && (
+        <section className="mb-6 rounded-xl border bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">5. Test the fix on unseen data</h2>
+            <button onClick={evaluate} disabled={loading}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-50">
+              Evaluate on unseen data
+            </button>
+          </div>
+
+          {report && before && after && (
+            <div className="space-y-4">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2 pr-4"></th>
+                    <th className="py-2 pr-4">Current rules</th>
+                    <th className="py-2">With Blue&apos;s fix</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b">
+                    <td className="py-2 pr-4 font-medium">Attacks caught</td>
+                    <td className="py-2 pr-4">{fraction(before.tp, before.tp + before.fn)}</td>
+                    <td className={`py-2 ${after.tp > before.tp ? "font-semibold text-emerald-700" : ""}`}>
+                      {fraction(after.tp, after.tp + after.fn)}
+                    </td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-2 pr-4 font-medium">Normal customers wrongly flagged</td>
+                    <td className="py-2 pr-4">{fraction(before.fp, before.fp + before.tn)}</td>
+                    <td className={`py-2 ${after.fp < before.fp ? "font-semibold text-emerald-700" : ""}`}>
+                      {fraction(after.fp, after.fp + after.tn)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <ul className="space-y-2">
+                {report.gate_results.map((g) => (
+                  <li key={g.name} className="flex gap-2 text-sm">
+                    <span className={g.passed ? "text-emerald-600" : "text-red-600"}>{g.passed ? "✓" : "✗"}</span>
+                    <span>
+                      <span className="font-medium">{GATES[g.name] ?? g.name}</span>
+                      {g.detail && <span className="text-slate-500"> — {g.detail}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="text-xs text-slate-500">
+                All numbers are computed by deterministic code on data neither agent saw — not by an AI.
+              </p>
             </div>
           )}
         </section>
