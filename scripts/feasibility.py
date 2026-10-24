@@ -359,6 +359,11 @@ def f_velocity_out_amount(v: HistoryView, window_h: int, p: dict) -> float:
     return sum(x.amount_cents for x in v.txns if x.from_id == a and x.ts > lo)
 
 
+def f_velocity_in_amount(v: HistoryView, window_h: int, p: dict) -> float:
+    a, lo = v.scored.from_id, v.scored.ts - window_h * HOUR
+    return sum(x.amount_cents for x in v.txns if x.to_id == a and x.ts > lo)
+
+
 def f_pass_through_ratio(v: HistoryView, window_h: int, p: dict) -> float:
     a, lo = v.scored.from_id, v.scored.ts - window_h * HOUR
     out = sum(x.amount_cents for x in v.txns if x.from_id == a and x.ts > lo)
@@ -399,6 +404,7 @@ def f_short_hold_hop_count(v: HistoryView, window_h: int, p: dict) -> float:
 FEATURES = {
     "velocity_out_count": f_velocity_out_count,
     "velocity_out_amount": f_velocity_out_amount,
+    "velocity_in_amount": f_velocity_in_amount,
     "pass_through_ratio": f_pass_through_ratio,
     "new_device_before_transfer": f_new_device_before_transfer,
     "transfer_amount": f_transfer_amount,
@@ -432,11 +438,15 @@ class Rule:
 
 
 BASELINE_V1 = (
-    Rule("R1", (Condition("velocity_out_count", ">=", 5, 1),)),
-    # Pass-through only counts when a mule-sized sum moves: >= $5,000 out in the same 6h window.
+    # Velocity only counts when real money leaves: >= $1,000 out in the same hour (not bill-splitting).
+    Rule("R1", (
+        Condition("velocity_out_count", ">=", 5, 1),
+        Condition("velocity_out_amount", ">=", 100_000, 1),
+    )),
+    # Pass-through only counts when a mule-sized sum came in: >= $5,000 received in the same 6h window.
     Rule("R2", (
         Condition("pass_through_ratio", ">=", 0.9, 6),
-        Condition("velocity_out_amount", ">=", 500_000, 6),
+        Condition("velocity_in_amount", ">=", 500_000, 6),
     )),
     Rule("R3", (
         Condition("new_device_before_transfer", ">=", 1, 0, (("n_hours", 24),)),
