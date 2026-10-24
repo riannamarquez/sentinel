@@ -12,8 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,6 +71,7 @@ def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list
 
 
 def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
+    load_dotenv(dotenv_path=Path.cwd() / '.env', override=False)
     db_path = db_path or os.environ.get("SENTINEL_DB", "sentinel.db")
     store = Store(db_path)
     adapter = adapter if adapter is not None else from_env(db_path)
