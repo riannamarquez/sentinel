@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sentinel.agents import blue
 from sentinel.api.app import create_app
 from sentinel.api.states import ALLOWED_TRANSITIONS, TERMINAL, RunState
+from sentinel.api.timeline import Timeline
 from sentinel.schemas import Condition, PatchOperation, RulePatch
 
 CONFIG = {"seed": 7, "account_count": 40, "holdout_benign_n": 40, "holdout_attack_copies": 2}
@@ -166,6 +167,36 @@ def test_store_uses_wal_and_audit_is_append_only(client, db_path):
     with pytest.raises(sqlite3.IntegrityError, match="never updated"):
         db.execute("UPDATE detector_versions SET rules_json = '[]'")
 
+
+
+def test_timeline_for_a_red_run_is_uncaught_on_v1(client):
+    lab_id = new_lab(client)
+    red = ok(client.post(f"/labs/{lab_id}/red-runs", json={}), 201)
+    body = ok(client.get(f"/labs/{lab_id}/timeline", params={"run_id": red["run_id"]}))
+    tl = Timeline.model_validate(body)
+    assert tl.detector_version == 1 and tl.summary.caught is False
+    assert "from" in body["transfers"][0] and "from_" not in body["transfers"][0]
+
+
+def test_timeline_against_the_approved_version_fires_r4(client):
+    lab_id = new_lab(client)
+    run_id, report = to_await_human(client, lab_id)
+    ok(client.post(f"/labs/{lab_id}/approvals", json={"report_id": report["report_id"], "decision": "approve"}))
+    tl = Timeline.model_validate(ok(client.get(f"/labs/{lab_id}/timeline", params={"run_id": run_id, "version": 2})))
+    assert tl.detector_version == 2 and tl.summary.caught is True
+    assert [t.rules_fired for t in tl.transfers[-2:]] == [["R4"], ["R4"]]
+    assert not any(t.rules_fired for t in tl.transfers[:-2])
+
+
+def test_timeline_404s_without_a_bypass(client):
+    lab_id = new_lab(client)
+    ok(client.post(f"/labs/{lab_id}/approvals", json={"report_id": to_await_human(client, lab_id)[1]["report_id"],
+                                                       "decision": "approve"}))
+    no_bypass = ok(client.post(f"/labs/{lab_id}/red-runs", json={"max_turns": 1}), 201)
+    assert no_bypass["bypass"] is None
+    missing = client.get(f"/labs/{lab_id}/timeline", params={"run_id": no_bypass["run_id"]})
+    assert missing.status_code == 404 and "no bypass" in missing.json()["detail"]
+    assert client.get(f"/labs/{lab_id}/timeline", params={"run_id": "run-999999"}).status_code == 404
 
 def test_state_machine_table_is_well_formed():
     for state in RunState:
