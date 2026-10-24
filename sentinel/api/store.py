@@ -248,6 +248,11 @@ class Store:
             raise NotFound(f"bypass {bypass_id} in run {run_id}")
         return BypassTrace.model_validate_json(row["json"])
 
+    def bypass_for_run(self, run_id: str) -> BypassTrace | None:
+        with self._connect() as db:
+            row = db.execute("SELECT json FROM bypasses WHERE run_id = ?", (run_id,)).fetchone()
+        return BypassTrace.model_validate_json(row["json"]) if row else None
+
     def save_patch(self, run_id: str, patch: RulePatch, error: str | None) -> None:
         with self.tx() as db:
             db.execute("INSERT INTO patches VALUES (?, ?, ?, ?)", (run_id, patch.patch_id, canonical_json(patch), error))
