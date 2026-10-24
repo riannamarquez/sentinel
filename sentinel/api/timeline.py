@@ -7,12 +7,16 @@ This file will hold models
 '''
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
+from sentinel.detector import score
+from sentinel.schemas import Rule, Scenario
 from sentinel.schemas.models import Model # importing model from models.py because it is strict/effective
 from sentinel.schemas.models import Cents, Id, PositiveCents, Timestamp, Version
+from sentinel.sim.actions import is_external, moved_out_cents
 
 
 class TimelineNode(Model): 
@@ -80,3 +84,31 @@ class Timeline(Model):
         if self.summary.caught != any(t.rules_fired for t in self.transfers):
             raise ValueError("summary.caught must be true exactly when some transfer fired a rule")
         return self
+
+
+def build_timeline(scenario: Scenario, rules: Sequence[Rule], *, lab_id: str, run_id: str,
+                   version: int, objective_cents: int, background_accounts: int) -> Timeline:
+    """Pure: one scenario scored against one rule set. No store, no I/O."""
+    node_ids: list[str] = []
+    for t in scenario.transactions:
+        for account_id in (t.from_id, t.to_id):
+            if account_id not in node_ids:
+                node_ids.append(account_id)
+    nodes = [TimelineNode(id=a, role="source" if a == scenario.source_account_id
+                          else "external" if is_external(a) else "mule") for a in node_ids]
+    if background_accounts > 0:
+        nodes.append(TimelineNode(id="OTHER", role="cluster", count=background_accounts))
+
+    fired = dict(score.timeline(scenario, rules))   # scored transfers only, no lookahead
+    transfers = [
+        TimelineTransfer(id=t.transaction_id, from_=t.from_id, to=t.to_id, amount_cents=t.amount_cents,
+                         t_offset_s=t.timestamp - scenario.start_ts, scored=t.transaction_id in fired,
+                         rules_fired=list(fired.get(t.transaction_id, ())))
+        for t in sorted(scenario.transactions, key=lambda t: (t.timestamp, t.transaction_id))
+    ]
+    return Timeline(
+        lab_id=lab_id, run_id=run_id, detector_version=version, start_ts=scenario.start_ts,
+        nodes=nodes, transfers=transfers,
+        summary=TimelineSummary(moved_cents=moved_out_cents(scenario), objective_cents=objective_cents,
+                                caught=any(t.rules_fired for t in transfers)),
+    )
