@@ -20,4 +20,4 @@ fixtures: install
 	$(UV) run --frozen python scripts/make_fixtures.py
 
 run: install
-	$(UV) run --frozen uvicorn sentinel.api.app:app --host 127.0.0.1 --port $(PORT)
+	$(UV) run --frozen uvicorn --factory sentinel.api.app:create_app --host 127.0.0.1 --port $(PORT)

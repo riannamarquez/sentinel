@@ -23,3 +23,13 @@ Choices made without asking, one line each: decision · why · how to undo.
 19. `canonical_json` uses a `default` hook so models nested in dicts serialize · found while writing fixtures · none needed.
 20. The determinism test hashes the world plus all three factory splits in 3 subprocesses with PYTHONHASHSEED 0, 1 and 4242 · covers both the world generator and the scenario factory · trim the snippet in `tests/test_determinism.py`.
 21. Added tests beyond the four requested: fixture drift, a greedy patch failing the FPR gate, Red's action validator, and the golden story (ring caught, slow variant missed then caught, lookalike never flagged) · cheap, and they pin what the demo relies on · delete the extra test functions.
+22. Steps run synchronously and return when done; no SSE yet · with stubbed agents every step takes well under a second · move steps to background tasks and add `GET /runs/{id}/events` when real LLM calls arrive.
+23. A run is one round; `POST /red-runs` creates it and walks initialize_lab → measure_outcome, and later endpoints take `run_id` and check the run belongs to the lab (404 otherwise) and is in the right state (409) · review 1.1.8 · none; this is the intended shape.
+24. Added terminal states `no_bypass_found`, `failed`, `cancelled`; every non-terminal state can go to `failed` or `cancelled` · review 1.1.7 · drop them from `ALLOWED_TRANSITIONS`.
+25. Approve checks `active_version == report.baseline_version` inside one `BEGIN IMMEDIATE` transaction and returns 409 `stale_base_version` otherwise; a repeated identical decision returns the original result, a different one returns 409 `already_decided` · review 2.1, 2.2 · none. Note: this fixes the approval race that design-v2 §9 lists as a known limitation.
+26. Approve on a report that failed its gates returns 409 `gates_failed` · design-v2 §7 · none.
+27. Rechallenge scores a fresh, never-seen `slow_chain_3` variant (final-holdout stream, index 10000 + run number) against the version active after the decision · design says "a fresh holdout scenario"; retiring it into regression is still deferred (§9) · change the template or index in `finish_round`.
+28. Audit `actor` is "human" for decisions with no authentication · auth is a deferred known limitation (§9) · add the bearer-token check from review 4.1.
+29. Labs must start at detector v1 (409 otherwise) · only v1 rules exist to seed · allow other versions once rule sets can be imported.
+30. Serve with `uvicorn --factory sentinel.api.app:create_app`, no module-level app · a module-level app created `sentinel.db` in whatever directory imported it · none.
+31. Lab splits are cached in memory by (seed, sizes) · they're deterministic, so a restart rebuilds identical splits · remove the `lru_cache`.
