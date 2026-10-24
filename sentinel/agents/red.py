@@ -1,4 +1,5 @@
-"""Red agent, stubbed: returns the hand-written slow-variant bypass from fixtures. No LLM."""
+"""Red agent. Recipe + recipe_to_candidate build hop-chain attacks from a few knobs; propose() is
+still a stub that returns the hand-written slow-variant bypass from fixtures. No LLM."""
 from __future__ import annotations
 
 import random
@@ -9,11 +10,12 @@ from pydantic import Field, model_validator
 
 from sentinel.fixtures import load_bypass_trace
 from sentinel.schemas import MAX_ACTIONS, Model, Rule, SimulationAction
-from sentinel.sim.actions import MAX_OPENED_ACCOUNTS
+from sentinel.sim.actions import HORIZON_S, MAX_OPENED_ACCOUNTS
 from sentinel.sim.clock import HOUR, MINUTE, rand_time
 from sentinel.sim.fraud import CASHOUT, SOURCE, Plan
 
 FORWARD_PCT = 95   # each mule forwards this much of what it received and keeps the rest
+MAX_SPLIT_GAP_MINUTES = 10   # recipe_to_candidate spaces a hop's splits 2-10 minutes apart
 
 
 @dataclass(frozen=True)
@@ -29,7 +31,7 @@ class RedCandidate:
 
 # create bounds so that a scenario doesn't get overwhelmed with > 30 actions
 class Recipe(Model):
-    """The knobs Red turns to build a hop-chain attack; frozen, so a tweak is a model_copy."""
+    """The knobs Red turns to build a hop-chain attack; frozen, so tweak() builds a new, re-validated Recipe."""
     n_mules: int = Field(ge=1, le=MAX_OPENED_ACCOUNTS)   # mule accounts the money passes through
     hold_hours: int = Field(ge=0, le=168)          # how long each mule holds before forwarding
     n_splits: int = Field(ge=1, le=MAX_ACTIONS)   # transfers per hop, all to the same next account
@@ -41,10 +43,24 @@ class Recipe(Model):
         """One open per mule, n_splits transfers on each of the n_mules + 1 hops, one device change."""
         return self.n_mules + self.n_splits * (self.n_mules + 1) + int(self.new_device)
 
+    @property
+    def duration_seconds(self) -> int:
+        """Worst case from start_ts to the last transfer: each of the n_mules + 1 hops holds, then
+        sends n_splits transfers up to MAX_SPLIT_GAP_MINUTES apart."""
+        hop = self.hold_hours * HOUR + (self.n_splits - 1) * MAX_SPLIT_GAP_MINUTES * MINUTE
+        return (self.n_mules + 1) * hop
+
+    def tweak(self, **changes) -> Recipe:
+        """A new Recipe with these fields changed, re-validated (model_copy(update=...) would skip that)."""
+        return type(self).model_validate(self.model_dump() | changes)
+
     @model_validator(mode="after")
     def _check(self) -> Recipe:
         if self.n_actions > MAX_ACTIONS:
             raise ValueError(f"recipe needs {self.n_actions} actions; a scenario allows at most {MAX_ACTIONS}")
+        if self.duration_seconds > HORIZON_S:
+            raise ValueError(f"recipe can take {self.duration_seconds / HOUR:g}h; a scenario must finish within "
+                             f"{HORIZON_S // HOUR}h of start_ts")
         return self
 
 
