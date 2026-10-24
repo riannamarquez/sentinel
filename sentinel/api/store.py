@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS approvals (
     version_created INTEGER,
     event_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pending_completions (
+    run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+    lab_id TEXT NOT NULL REFERENCES labs(lab_id),
+    detector_version INTEGER NOT NULL,
+    decision TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rechallenges (
     run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
     json TEXT NOT NULL
@@ -265,8 +271,13 @@ class Store:
             db.execute("INSERT INTO reports VALUES (?, ?, ?)", (report.report_id, report.run_id, canonical_json(report)))
 
     def next_report_id(self) -> str:
-        with self._connect() as db:
-            return f"rep-{db.execute('SELECT COUNT(*) FROM reports').fetchone()[0] + 1:06d}"
+        with self.tx() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS report_ids (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+            # Existing databases can already contain reports from before ID reservations.
+            floor = db.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+            db.execute("INSERT OR IGNORE INTO report_ids(id) VALUES (?)", (floor,))
+            seq = db.execute("INSERT INTO report_ids DEFAULT VALUES").lastrowid
+            return f"rep-{seq:06d}"
 
     def report(self, report_id: str) -> EvaluationReport:
         with self._connect() as db:
@@ -290,8 +301,19 @@ class Store:
         """Record a human decision atomically. Approve creates a version only if the lab's active
         version is still the one the report was evaluated against (optimistic concurrency)."""
         with self.tx() as db:
-            if db.execute("SELECT 1 FROM approvals WHERE report_id = ?", (report.report_id,)).fetchone():
-                raise Conflict("already_decided", report.report_id)
+            previous = db.execute("SELECT * FROM approvals WHERE report_id = ?", (report.report_id,)).fetchone()
+            if previous:
+                if previous['decision'] != decision:
+                    raise Conflict("already_decided", report.report_id)
+                return {k: previous[k] for k in ('decision', 'version_created', 'event_id')}
+            run = db.execute("SELECT lab_id,state FROM runs WHERE run_id=?", (report.run_id,)).fetchone()
+            if not run or run['lab_id'] != lab_id:
+                raise NotFound(report.run_id)
+            if run['state'] != RunState.AWAIT_HUMAN:
+                raise Conflict('invalid_state', run['state'])
+            if decision == 'approve' and (not report.eligible_for_approval or
+                                         sha256_of(new_rules) != report.candidate_rules_hash):
+                raise Conflict('gates_failed', 'rules must match the eligible evaluated candidate')
             active = db.execute("SELECT active_version FROM labs WHERE lab_id = ?", (lab_id,)).fetchone()[0]
             version_created = None
             if decision == "approve":
@@ -313,6 +335,12 @@ class Store:
                            (lab_id, version_created, canonical_json(new_rules), report.baseline_version, event_id))
             db.execute("INSERT INTO approvals VALUES (?, ?, ?, ?)",
                        (report.report_id, decision, version_created, event_id))
+            target = RunState.APPLY_NEW_VERSION if decision == 'approve' else RunState.REJECT_NO_CHANGE
+            db.execute("UPDATE runs SET state=? WHERE run_id=?", (target, report.run_id))
+            self.audit(db, lab_id=lab_id, run_id=report.run_id, actor='human', action=f'enter:{target}',
+                       version_before=report.baseline_version, version_after=version_created or active)
+            db.execute("INSERT INTO pending_completions VALUES (?,?,?,?)",
+                       (report.run_id, lab_id, version_created or active, decision))
         return {"decision": decision, "version_created": version_created, "event_id": event_id,
                 "active_version": version_created or active}
 
@@ -324,3 +352,104 @@ class Store:
         with self._connect() as db:
             row = db.execute("SELECT json FROM rechallenges WHERE run_id = ?", (run_id,)).fetchone()
         return DetectionResult.model_validate_json(row["json"]) if row else None
+
+
+    def claim_job(self, run_id, expected_state=None):
+        with self.tx() as db:
+            run = db.execute('SELECT state FROM runs WHERE run_id=?', (run_id,)).fetchone()
+            if run is None:
+                raise NotFound(run_id)
+            if expected_state is not None and run['state'] != expected_state:
+                raise Conflict('invalid_state', run['state'])
+            db.execute("CREATE TABLE IF NOT EXISTS jobs (run_id TEXT PRIMARY KEY REFERENCES runs(run_id))")
+            return db.execute("INSERT OR IGNORE INTO jobs VALUES (?)", (run_id,)).rowcount == 1
+
+    def release_job(self, run_id):
+        with self.tx() as db:
+            db.execute("DELETE FROM jobs WHERE run_id=?", (run_id,))
+
+    def job_running(self, run_id):
+        with self._connect() as db:
+            exists = db.execute("SELECT 1 FROM sqlite_master WHERE name='jobs'").fetchone()
+            return bool(exists and db.execute("SELECT 1 FROM jobs WHERE run_id=?", (run_id,)).fetchone())
+
+    def recover_interrupted(self):
+        from sentinel.api.states import TERMINAL
+        stable = TERMINAL | {RunState.AWAIT_HUMAN, RunState.MEASURE_OUTCOME, RunState.VALIDATE_PATCH}
+        pending = {job['run_id'] for job in self.pending_completions()}
+        with self._connect() as db:
+            rows = db.execute("SELECT run_id,state FROM runs").fetchall()
+        for row in rows:
+            if row['run_id'] not in pending and RunState(row['state']) not in TERMINAL and (RunState(row['state']) not in stable or self.job_running(row['run_id'])):
+                self.transition(row['run_id'], RunState.FAILED, failure='server restarted during step')
+        with self.tx() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS jobs (run_id TEXT PRIMARY KEY REFERENCES runs(run_id))")
+            db.execute("DELETE FROM jobs")
+
+    def export_lab(self, lab_id):
+        """All artifacts and associations come from one SQLite read snapshot."""
+        with self._connect() as db:
+            db.execute('BEGIN')
+            row = db.execute('SELECT * FROM labs WHERE lab_id=?', (lab_id,)).fetchone()
+            if row is None:
+                raise NotFound(lab_id)
+            lab = dict(row)
+            lab['config'] = json.loads(lab.pop('config_json'))
+            lab['world'] = json.loads(lab.pop('world_json'))
+            runs = [dict(r) for r in db.execute('SELECT * FROM runs WHERE lab_id=? ORDER BY run_id', (lab_id,))]
+            for run in runs:
+                rid = run['run_id']
+                run['bypasses'] = [json.loads(r['json']) for r in db.execute('SELECT json FROM bypasses WHERE run_id=? ORDER BY rowid', (rid,))]
+                run['patches'] = [dict(patch=json.loads(r['json']), error=r['error'], valid=r['error'] is None)
+                                  for r in db.execute('SELECT json,error FROM patches WHERE run_id=? ORDER BY rowid', (rid,))]
+                run['reports'] = [json.loads(r['json']) for r in db.execute('SELECT json FROM reports WHERE run_id=? ORDER BY rowid', (rid,))]
+                result = db.execute('SELECT json FROM rechallenges WHERE run_id=?', (rid,)).fetchone()
+                run['rechallenge'] = json.loads(result['json']) if result else None
+                run['approvals'] = [dict(r) for r in db.execute('SELECT a.* FROM approvals a JOIN reports p ON a.report_id=p.report_id WHERE p.run_id=? ORDER BY a.rowid', (rid,))]
+            versions = [dict(version=r['version'], rules=json.loads(r['rules_json']),
+                             parent_version=r['parent_version'], created_by_event_id=r['created_by_event_id'])
+                        for r in db.execute('SELECT * FROM detector_versions WHERE lab_id=? ORDER BY version', (lab_id,))]
+            events = [dict(r) for r in db.execute('SELECT * FROM audit_events WHERE lab_id=? ORDER BY seq', (lab_id,))]
+            for event in events:
+                event.pop('lab_id')
+            db.execute('COMMIT')
+        # Flat collections preserve the playback API; nested runs are authoritative.
+        return dict(format_version=2, lab=lab, runs=runs, versions=versions, events=events,
+                    bypasses=[b for r in runs for b in r['bypasses']],
+                    patches=[p['patch'] for r in runs for p in r['patches']],
+                    reports=[p for r in runs for p in r['reports']],
+                    approvals=[a for r in runs for a in r['approvals']],
+                    rechallenges=[r['rechallenge'] for r in runs if r['rechallenge']])
+
+    def pending_completions(self, run_id=None):
+        with self._connect() as db:
+            rows = db.execute('SELECT * FROM pending_completions' + (' WHERE run_id=?' if run_id else ''),
+                              (run_id,) if run_id else ()).fetchall()
+        return [dict(r) for r in rows]
+
+    def complete_decision(self, run_id, result):
+        """Concurrent retries may compute twice; only one commits the result and events."""
+        with self.tx() as db:
+            job = db.execute('SELECT * FROM pending_completions WHERE run_id=?', (run_id,)).fetchone()
+            if job is None:
+                return
+            if result.detector_version != job['detector_version']:
+                raise Conflict('wrong_rechallenge_version')
+            run = db.execute('SELECT state FROM runs WHERE run_id=?', (run_id,)).fetchone()
+            check_transition(RunState(run['state']), RunState.RECHALLENGE)
+            db.execute('INSERT INTO rechallenges VALUES (?,?)', (run_id, canonical_json(result)))
+            for target in (RunState.RECHALLENGE, RunState.COMPLETE):
+                db.execute('UPDATE runs SET state=? WHERE run_id=?', (target, run_id))
+                self.audit(db, lab_id=job['lab_id'], run_id=run_id, actor='system', action=f'enter:{target}',
+                           out=result if target == RunState.RECHALLENGE else None,
+                           version_before=job['detector_version'], version_after=job['detector_version'])
+            db.execute('DELETE FROM pending_completions WHERE run_id=?', (run_id,))
+
+    def run_artifacts(self, run_id):
+        self.run(run_id)
+        with self._connect() as db:
+            bypasses = [json.loads(r['json']) for r in db.execute("SELECT json FROM bypasses WHERE run_id=?", (run_id,))]
+            patches = [dict(patch=json.loads(r['json']), valid=r['error'] is None, error=r['error'])
+                       for r in db.execute("SELECT json,error FROM patches WHERE run_id=? ORDER BY rowid", (run_id,))]
+            reports = [json.loads(r['json']) for r in db.execute("SELECT json FROM reports WHERE run_id=? ORDER BY rowid", (run_id,))]
+        return dict(bypasses=bypasses, patches=patches, reports=reports)

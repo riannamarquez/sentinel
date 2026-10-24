@@ -33,3 +33,13 @@ Choices made without asking, one line each: decision · why · how to undo.
 29. Labs must start at detector v1 (409 otherwise) · only v1 rules exist to seed · allow other versions once rule sets can be imported.
 30. Serve with `uvicorn --factory sentinel.api.app:create_app`, no module-level app · a module-level app created `sentinel.db` in whatever directory imported it · none.
 31. Lab splits are cached in memory by (seed, sizes) · they're deterministic, so a restart rebuilds identical splits · remove the `lru_cache`.
+
+32. Backend 2 uses native Gemini generateContent by default in live mode; model ID is explicitly configured, and fixture mode remains the no-network default · provider chosen by the user · change SENTINEL_LLM_PROVIDER/model or inject an adapter.
+33. Blue and evaluation support opt-in `?background=true` with persistent SSE sequence IDs and run-artifact retrieval · existing frontend synchronous calls keep working · switch callers to background mode when wiring progress UI.
+34. Replay records all proposal validation attempts keyed by prompt contents/version, schema, model and evidence; an exported bundle can verify evaluator reports and replay Blue without a network transport · make offline replay executable · see docs/BACKEND2.md for limits and setup.
+35. Blue's prompt excludes Red's rationale and scenario labels; only structured evidence, current rules and the feature catalog are passed · removes the direct rationale injection path while leaving deterministic validation authoritative · extend the prompt-view function only with reviewed fields.
+
+36. Approval now atomically commits the detector change, decision state and a pending rechallenge pinned to the decision-time version · restart and simultaneous retries must not duplicate versions or lose completion · pending completions resume on startup or an identical decision retry.
+37. Replay export v2 takes one SQLite read snapshot and nests artifacts under their run; flat collections remain for playback · repeated patch IDs across runs must never substitute for one another · re-export legacy v1 bundles.
+38. Proposal/evaluation admission is limited to four steps with two execution slots shared by sync/background calls; Gemini proposals have an overall 90-second configurable deadline and retry only transient HTTP failures · prevent unbounded queueing and multi-minute nested retries · configure SENTINEL_LLM_TIMEOUT_SECONDS for the demo budget.
+39. Red validation carries scenario/candidate pairs through scoring · dropping an invalid candidate must not shift the rationale onto the next candidate · covered by the invalid-first-candidate regression test.
