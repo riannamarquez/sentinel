@@ -1,0 +1,26 @@
+{
+  "lab_id": "lab-0001",
+  "run_id": "run-000001",
+  "detector_version": 2,
+  "start_ts": 255780,
+  "nodes": [
+    {"id": "EXT-victim", "role": "external", "count": null},
+    {"id": "SRC", "role": "source", "count": null},
+    {"id": "M1", "role": "mule", "count": null},
+    {"id": "M2", "role": "mule", "count": null},
+    {"id": "M3", "role": "mule", "count": null},
+    {"id": "EXT-cashout", "role": "external", "count": null}
+  ],
+  "transfers": [
+    {"id": "search.slow_chain_3.0000-00000", "from": "EXT-victim", "to": "SRC", "amount_cents": 836406, "t_offset_s": 0, "scored": false, "rules_fired": []},
+    {"id": "search.slow_chain_3.0000-00001", "from": "SRC", "to": "M1", "amount_cents": 802949, "t_offset_s": 69780, "scored": true, "rules_fired": []},
+    {"id": "search.slow_chain_3.0000-00002", "from": "M1", "to": "M2", "amount_cents": 738713, "t_offset_s": 124320, "scored": true, "rules_fired": []},
+    {"id": "search.slow_chain_3.0000-00003", "from": "M2", "to": "M3", "amount_cents": 723938, "t_offset_s": 195420, "scored": true, "rules_fired": ["R4"]},
+    {"id": "search.slow_chain_3.0000-00004", "from": "M3", "to": "EXT-cashout", "amount_cents": 702219, "t_offset_s": 250080, "scored": true, "rules_fired": ["R4"]}
+  ],
+  "summary": {
+    "moved_cents": 702219,
+    "objective_cents": 300000,
+    "caught": true
+  }
+}
