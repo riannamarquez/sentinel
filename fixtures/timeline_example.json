@@ -9,7 +9,8 @@
     {"id": "M1", "role": "mule", "count": null},
     {"id": "M2", "role": "mule", "count": null},
     {"id": "M3", "role": "mule", "count": null},
-    {"id": "EXT-cashout", "role": "external", "count": null}
+    {"id": "EXT-cashout", "role": "external", "count": null},
+    {"id": "OTHER", "role": "cluster", "count": 40}
   ],
   "transfers": [
     {"id": "search.slow_chain_3.0000-00000", "from": "EXT-victim", "to": "SRC", "amount_cents": 836406, "t_offset_s": 0, "scored": false, "rules_fired": []},

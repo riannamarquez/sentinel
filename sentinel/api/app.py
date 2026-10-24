@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sentinel.agents import blue, red
 from sentinel.api.states import InvalidTransition, RunState
 from sentinel.api.store import Conflict, NotFound, Store
+from sentinel.api.timeline import Timeline, build_timeline
 from sentinel.detector.baseline import BASELINE_V1
 from sentinel.detector.patches import PatchError, apply_patch
 from sentinel.detector.score import diagnose, score
@@ -234,6 +235,18 @@ def create_app(db_path: str | None = None) -> FastAPI:
     def reports(lab_id: str):
         store.lab(lab_id)
         return {"reports": store.reports(lab_id), "versions": store.versions(lab_id)}
+
+    @app.get("/labs/{lab_id}/timeline", response_model=Timeline)
+    def get_timeline(lab_id: str, run_id: str, version: int | None = None):
+        run = store.run(run_id, lab_id)
+        version = run["base_version"] if version is None else version
+        rules = store.rules(lab_id, version)
+        trace = store.bypass_for_run(run_id)
+        if trace is None:
+            raise NotFound(f"no bypass for run {run_id}")
+        return build_timeline(trace.scenario, rules, lab_id=lab_id, run_id=run_id, version=version,
+                              objective_cents=trace.objective_cents,
+                              background_accounts=store.lab(lab_id)["world"]["accounts"])
 
     @app.get("/runs/{run_id}")
     def get_run(run_id: str):

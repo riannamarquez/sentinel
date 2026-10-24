@@ -9,14 +9,12 @@ This file will hold models
 # has finished being defined. Without this, Python would complain the name doesn't exist yet.
 from __future__ import annotations
 
-# Annotated: attach extra rules to a type, e.g. "a str that matches this pattern".
-# Literal:   a type that only allows the exact values listed.
 from typing import Annotated, Literal
 
-# Field:           sets per-field rules (min/max, default value, alias name).
-# model_validator: marks a method that checks the whole object after its fields are filled in.
 from pydantic import Field, model_validator
 
+from sentinel.detector import score
+from sentinel.schemas import Rule, Scenario
 from sentinel.schemas.models import Model # importing model from models.py because it is strict/effective
 # Shared field types from models.py, so these limits match the rest of the project:
 #   Cents         = int from 0 up to $1bn (in cents)
@@ -25,10 +23,6 @@ from sentinel.schemas.models import Model # importing model from models.py becau
 #   Timestamp     = int seconds from 0 up to one simulated year
 #   Version       = detector version number, 1 or higher
 from sentinel.schemas.models import Cents, Id, PositiveCents, Timestamp, Version
-
-
-# Every class below inherits from Model, so every one is frozen (can't be changed after
-# it's created) and rejects any JSON key it doesn't define (a typo like "amout_cents" errors).
 
 
 class TimelineNode(Model):
@@ -55,10 +49,7 @@ class TimelineNode(Model):
 
 class TimelineTransfer(Model):
     """One transfer (graph edge). Only a scored transfer can fire rules."""
-    id: Id                            # the transaction id from the trace
-    # `from` is a reserved Python word, so the Python attribute is `from_`. The alias makes
-    # the JSON key "from": incoming JSON must say "from", and output says "from" when dumped
-    # with by_alias=True (FastAPI does that automatically for response_model).
+    id: Id
     from_: Id = Field(alias="from")   # `from` is a Python keyword; dump with by_alias=True
     to: Id                            # the node id the money goes to
     amount_cents: PositiveCents       # integer cents, never floats (0.1 + 0.2 != 0.3 in floats)
@@ -122,3 +113,31 @@ class Timeline(Model):
         if self.summary.caught != any(t.rules_fired for t in self.transfers):
             raise ValueError("summary.caught must be true exactly when some transfer fired a rule")
         return self
+
+
+def build_timeline(scenario: Scenario, rules: Sequence[Rule], *, lab_id: str, run_id: str,
+                   version: int, objective_cents: int, background_accounts: int) -> Timeline:
+    """Pure: one scenario scored against one rule set. No store, no I/O."""
+    node_ids: list[str] = []
+    for t in scenario.transactions:
+        for account_id in (t.from_id, t.to_id):
+            if account_id not in node_ids:
+                node_ids.append(account_id)
+    nodes = [TimelineNode(id=a, role="source" if a == scenario.source_account_id
+                          else "external" if is_external(a) else "mule") for a in node_ids]
+    if background_accounts > 0:
+        nodes.append(TimelineNode(id="OTHER", role="cluster", count=background_accounts))
+
+    fired = dict(score.timeline(scenario, rules))   # scored transfers only, no lookahead
+    transfers = [
+        TimelineTransfer(id=t.transaction_id, from_=t.from_id, to=t.to_id, amount_cents=t.amount_cents,
+                         t_offset_s=t.timestamp - scenario.start_ts, scored=t.transaction_id in fired,
+                         rules_fired=list(fired.get(t.transaction_id, ())))
+        for t in sorted(scenario.transactions, key=lambda t: (t.timestamp, t.transaction_id))
+    ]
+    return Timeline(
+        lab_id=lab_id, run_id=run_id, detector_version=version, start_ts=scenario.start_ts,
+        nodes=nodes, transfers=transfers,
+        summary=TimelineSummary(moved_cents=moved_out_cents(scenario), objective_cents=objective_cents,
+                                caught=any(t.rules_fired for t in transfers)),
+    )
