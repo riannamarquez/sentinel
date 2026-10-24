@@ -1,0 +1,19 @@
+{
+  "all_of": [
+    {
+      "feature_key": "short_hold_hop_count",
+      "operator": ">=",
+      "params": {
+        "hold_hours": 24,
+        "min_carry_pct": 40
+      },
+      "threshold": 4,
+      "window_hours": 72
+    }
+  ],
+  "base_version": 1,
+  "operation": "add",
+  "patch_id": "golden-hop-count",
+  "rationale": "The bypass moved the stolen amount through 4+ consecutive transfers, each sent within 24 hours of the previous one arriving and forwarding most of it. Flag outgoing transfers at the end of such a chain.",
+  "rule_id": null
+}
