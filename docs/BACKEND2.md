@@ -12,7 +12,11 @@ make run
 
 The default is **fixture** mode: no credentials or network required. `/healthz` reports `fixture`, `live`, or `replay`. Red remains Backend 1's fixture implementation; the new adapter is wired to Blue.
 
-For live Blue, set these environment variables before starting the server:
+The backend automatically loads `.env` from the current working directory when `create_app` runs. Run `make run` from the repository root. Existing environment variables take precedence; missing `.env` files are allowed. `.env` is gitignored, and `.env.example` contains no credentials.
+
+For live Blue, copy `.env.example` to `.env` if you do not already have one, then set `SENTINEL_LLM_MODE=live`, fill in `GEMINI_API_KEY` and `SENTINEL_LLM_MODEL`, and run `make run`. Restart the server after editing `.env`.
+
+You can also set the same configuration directly in your terminal:
 
 ```sh
 export SENTINEL_LLM_MODE=live

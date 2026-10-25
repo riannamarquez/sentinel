@@ -12,8 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -92,10 +94,12 @@ def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list
 
 
 def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> FastAPI:
+    load_dotenv(dotenv_path=Path.cwd() / '.env', override=False)
     db_path = db_path or os.environ.get("SENTINEL_DB", "sentinel.db")
     store = Store(db_path)
     adapter = adapter if adapter is not None else from_env(db_path)
-    red_policy = red_policy or red_policy_from_env(adapter)   # an unknown SENTINEL_RED fails here, at startup
+    if red_policy is None:
+        red_policy = red_policy_from_env(adapter)
     executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sentinel")
     slots = BoundedSemaphore(4)  # total admitted background + synchronous steps
     workers = BoundedSemaphore(2)
