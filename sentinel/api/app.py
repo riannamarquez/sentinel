@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from sentinel.agents import blue, red
+from sentinel.api.breakdown import Breakdown, build_breakdown
 from sentinel.api.bypass_replay import replay_bypass
 from sentinel.api.states import InvalidTransition, RunState, TERMINAL
 from sentinel.api.store import Conflict, NotFound, Store
@@ -324,6 +325,18 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
     def reports(lab_id: str):
         store.lab(lab_id)
         return {"reports": store.reports(lab_id), "versions": store.versions(lab_id)}
+
+    @app.get("/labs/{lab_id}/reports/{report_id}/breakdown", response_model=Breakdown)
+    def breakdown(lab_id: str, report_id: str):
+        report = store.report(report_id)
+        store.run(report.run_id, lab_id)   # 404s if the report is not in this lab
+        patch, _ = store.patch(report.run_id, report.patch_id)   # a report only exists for a valid patch
+        baseline_rules = store.rules(lab_id, report.baseline_version)
+        config = store.lab(lab_id)["config"]
+        scenarios = lab_splits(config.seed, config.holdout_benign_n, config.holdout_attack_copies)[Split.FINAL_HOLDOUT]
+        return build_breakdown(scenarios, baseline_rules, apply_patch(baseline_rules, patch),
+                               report_id=report.report_id, run_id=report.run_id,
+                               baseline_version=report.baseline_version, candidate_version=report.candidate_version)
 
     @app.get("/labs/{lab_id}/timeline", response_model=Timeline)
     def get_timeline(lab_id: str, run_id: str, version: int | None = None):
