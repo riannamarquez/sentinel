@@ -88,3 +88,9 @@ export function analyzeChain(bypass: Bypass): AttackChain {
     columns: columns.filter(Boolean),
   };
 }
+
+// What reached cash-out: every transfer from this bank to another bank.
+export function escapedCents(chain: AttackChain) {
+  return chain.txs.filter((t) => chain.owned.has(t.from_id) && !chain.owned.has(t.to_id))
+    .reduce((s, t) => s + t.amount_cents, 0);
+}

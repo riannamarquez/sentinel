@@ -2,9 +2,9 @@
 
 import { Fragment, useEffect, useState } from "react";
 import * as api from "../api";
-import { analyzeChain, type AttackChain } from "./attackChain";
-import { ruleTimeLimits, silenceSentence, timeline } from "./bypassExplain";
-import { describeFiring, dollars } from "./format";
+import { analyzeChain, escapedCents, type AttackChain } from "./attackChain";
+import { adaptation, ruleTimeLimits, silenceSentence, timeline, type Adaptation, type ChangeKey } from "./bypassExplain";
+import { describeFiring, wholeDollars } from "./format";
 import StepCard, { BUTTON_ATTACK, Chip } from "./StepCard";
 
 type Cached = api.BypassReplay | { error: string };
@@ -16,10 +16,6 @@ const ClockIcon = (
     <path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" />
   </svg>
 );
-
-function wholeDollars(cents: number) {
-  return dollars(Math.round(cents / 100) * 100);
-}
 
 function holdText(seconds: number | null, caps = false) {
   if (seconds === null) return "—";
@@ -50,8 +46,15 @@ function accountFigures(chain: AttackChain, id: string) {
   };
 }
 
+// Values that changed since Red's previous attack are drawn in bold coral so the eye goes to them.
+const CHANGED = "font-semibold text-coral";
+
 // Vertical chain, one row per step of the relay; split branches sit side by side in the same row.
-function Chain({ chain, replay }: { chain: AttackChain; replay: api.BypassReplay | null }) {
+function Chain({ chain, replay, changed }: {
+  chain: AttackChain;
+  replay: api.BypassReplay | null;
+  changed: Set<ChangeKey>;
+}) {
   const stopAt = replay?.alert ? replay.alert_hop_index : null;
   let n = 0;
   return (
@@ -62,7 +65,8 @@ function Chain({ chain, replay }: { chain: AttackChain; replay: api.BypassReplay
         const never = stopAt !== null && numbers.length > 0 && numbers.every((x) => x > stopAt);
         const stopped = stopAt !== null && numbers.includes(stopAt);
         const sender = incoming[0]?.tx.from_id;
-        const connector = sender && !chain.owned.has(sender) ? "TRANSFER" : `HELD ${holdText(incoming[0]?.waitedSeconds ?? null, true)}`;
+        const held = !!sender && chain.owned.has(sender);
+        const split = changed.has("splits") && incoming.length > 1 ? ` · ${incoming.length} TRANSFERS` : "";
         return (
           <Fragment key={c}>
             {c > 0 && (
@@ -70,7 +74,14 @@ function Chain({ chain, replay }: { chain: AttackChain; replay: api.BypassReplay
                 <div className={`absolute left-4 top-0 h-full border-l ${never ? "border-dashed border-muted/60" : "border-coral/70"}`} />
                 <span className={`absolute left-4 bottom-0 -translate-x-1/2 text-[9px] leading-none ${never ? "text-muted/60" : "text-coral/80"}`}>▼</span>
                 <span className={`label-caps ml-8 tabular-nums ${never ? "text-muted/60" : "text-muted"}`}>
-                  {never ? "Never happens" : connector}
+                  {never ? "Never happens" : (
+                    <>
+                      {held
+                        ? <span className={changed.has("hold") ? CHANGED : ""}>HELD {holdText(incoming[0]?.waitedSeconds ?? null, true)}</span>
+                        : "TRANSFER"}
+                      {split && <span className={CHANGED}>{split}</span>}
+                    </>
+                  )}
                 </span>
                 {stopped && (
                   <span className="ml-3"><Chip tone="mint">Stopped here by {replay!.triggered_rule_ids.join(", ")}</Chip></span>
@@ -91,7 +102,9 @@ function Chain({ chain, replay }: { chain: AttackChain; replay: api.BypassReplay
                       </div>
                       <div className="mt-0.5 flex justify-between gap-2 text-[14px] text-muted">
                         <span>{inside ? `${id} · Our bank` : "Outside bank"}</span>
-                        <span className="tabular-nums">{holdText(f.heldSeconds)}</span>
+                        <span className={`tabular-nums ${changed.has("hold") && f.heldSeconds !== null ? CHANGED : ""}`}>
+                          {holdText(f.heldSeconds)}
+                        </span>
                       </div>
                     </div>
                   );
@@ -102,6 +115,23 @@ function Chain({ chain, replay }: { chain: AttackChain; replay: api.BypassReplay
         );
       })}
     </ol>
+  );
+}
+
+// What Red changed since its previous attack on this lab, and the rule that made it change.
+function AdaptedCallout({ adapted }: { adapted: Adaptation }) {
+  return (
+    <div className="mb-5 rounded-[2px] border-l-2 border-coral bg-red-panel p-4">
+      <p className="label-caps text-coral">How Red adapted</p>
+      {adapted.changes.length ? (
+        <ul className="mt-2 space-y-1 text-[16px] tabular-nums text-ink">
+          {adapted.changes.map((c) => <li key={c.key}>{c.text}</li>)}
+        </ul>
+      ) : (
+        <p className="mt-2 text-[16px] text-ink">Red reused its previous attack unchanged.</p>
+      )}
+      {adapted.why && <p className="mt-2 text-[15px] text-muted">{adapted.why}</p>}
+    </div>
   );
 }
 
@@ -120,10 +150,12 @@ function RechallengeBanner({ rechallenge }: { rechallenge: api.Rechallenge }) {
   );
 }
 
-export default function NetworkMap({ labId, runId, bypass, baseRules, patch, candidateReady, approval, otherCustomers, onRerun, loading }: {
+export default function NetworkMap({ labId, runId, bypass, previous, attackNumber, baseRules, patch, candidateReady, approval, otherCustomers, onRerun, loading }: {
   labId: string | null;
   runId: string | null;
   bypass: api.Bypass;
+  previous: api.Bypass | null;          // Red's previous attack on this lab, to show what changed
+  attackNumber: number;
   baseRules: api.Rule[] | null;
   patch: api.RulePatch | null;          // the evaluated patch, for the caught reason
   candidateReady: boolean;              // a valid patch has been evaluated
@@ -165,14 +197,16 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
 
   // What reached cash-out (every transfer from this bank to another bank), as a share of what was stolen
   // (every transfer from another bank into this one).
-  const reachedCents = chain.txs.filter((t) => chain.owned.has(t.from_id) && !chain.owned.has(t.to_id))
-    .reduce((s, t) => s + t.amount_cents, 0);
+  const reachedCents = escapedCents(chain);
   const stolenCents = chain.txs.filter((t) => !chain.owned.has(t.from_id) && chain.owned.has(t.to_id))
     .reduce((s, t) => s + t.amount_cents, 0);
   const share = stolenCents ? `${Number(((reachedCents / stolenCents) * 100).toFixed(1))}% of stolen funds` : null;
   const insideCount = chain.order.filter((id) => chain.owned.has(id)).length;
   const { bars } = timeline(chain);
   const why = silenceSentence(bars, baseRules ? ruleTimeLimits(baseRules) : [], bypass);
+  const adapted = previous ? adaptation(previous, bypass, baseRules) : null;
+  const changed = new Set(adapted?.changes.map((c) => c.key));
+  const previousEscaped = previous && changed.has("escaped") ? escapedCents(analyzeChain(previous)) : null;
 
   const toggle = (choice: View, label: string, disabled: boolean) => (
     <span title={disabled ? "Ask Blue for a fix first" : undefined} className="min-w-0 flex-1">
@@ -188,14 +222,16 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
     <StepCard id="attack-path" label="Red agent finding" labelTone="coral"
       title={
         <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          Attack path
+          <span className="tabular-nums">Attack {attackNumber} · against Detector v{bypass.detector_version}</span>
           {!replay ? <Chip tone="muted">Replaying</Chip>
             : replay.alert ? <Chip tone="mint">Caught</Chip> : <Chip tone="coral">Slipped through</Chip>}
         </span>
       }
       subtitle={replay?.alert
         ? `${replay.detector_label} flags this ${insideCount}-account chain at hop ${replay.alert_hop_index} of ${chain.transfers.length}.`
-        : `A ${insideCount}-account mule chain moved funds outside the bank without triggering a rule.`}>
+        : <>A <span className={changed.has("mules") ? CHANGED : ""}>{insideCount}-account</span> mule chain moved funds outside the bank without triggering a rule.</>}>
+      {adapted && <AdaptedCallout adapted={adapted} />}
+
       <div className="mb-5 flex gap-2">
         {toggle("base", v1Label, false)}
         {toggle("candidate", v2Label, !candidateReady)}
@@ -230,11 +266,14 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
             <p className="label-caps text-coral">Escaped undetected</p>
             <p className="mt-2 text-[44px] leading-none tabular-nums text-coral">{wholeDollars(reachedCents)}</p>
             {share && <p className="mt-3 text-[15px] tabular-nums text-muted">{share}</p>}
+            {previousEscaped !== null && (
+              <p className="mt-1 text-[15px] tabular-nums text-muted">was {wholeDollars(previousEscaped)} in the previous attack</p>
+            )}
           </div>
         )}
       </div>
 
-      <Chain chain={chain} replay={replay} />
+      <Chain chain={chain} replay={replay} changed={changed} />
 
       <div className="mt-6 flex gap-3 border-t border-line pt-5">
         <span className="mt-0.5 shrink-0 text-coral">{ClockIcon}</span>

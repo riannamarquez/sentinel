@@ -29,6 +29,8 @@ export default function Home() {
   const [world, setWorld] = useState<api.World | null>(null);
   const [baseline, setBaseline] = useState<api.BaselineResult[] | null>(null);
   const [redRun, setRedRun] = useState<api.RedRun | null>(null);
+  // Earlier Red runs' bypasses on this lab, oldest first, so the map can show how Red adapted.
+  const [previousBypasses, setPreviousBypasses] = useState<api.Bypass[]>([]);
   const [patchRun, setPatchRun] = useState<api.PatchRun | null>(null);
   const [patchId, setPatchId] = useState<string | null>(null);
   const [report, setReport] = useState<api.EvaluationReport | null>(null);
@@ -81,6 +83,7 @@ export default function Home() {
     pollingRun.current = null;
     setBaseline(null);
     setRedRun(null);
+    setPreviousBypasses([]);
     setPatchRun(null);
     setPatchId(null);
     setReport(null);
@@ -111,8 +114,10 @@ export default function Home() {
     setPatchId(null);
     setReport(null);
     setApproval(null);
+    const replaced = redRun?.bypass ?? null;
     return run("red", runRed, async () => {
       const result = await api.startRedRun(labId);
+      if (replaced) setPreviousBypasses((p) => [...p, replaced]);
       setRedRun(result);
       refreshRun(result.run_id);
       setScrollTarget({ id: result.bypass ? "attack-path" : "step-red" });
@@ -281,7 +286,8 @@ export default function Home() {
             {/* Left: Red's finding */}
             <div className="space-y-6">
               {redRun?.bypass ? (
-                <NetworkMap labId={labId} runId={runId} bypass={redRun.bypass} baseRules={redRun.rules}
+                <NetworkMap labId={labId} runId={runId} bypass={redRun.bypass}
+                  previous={previousBypasses.at(-1) ?? null} attackNumber={previousBypasses.length + 1} baseRules={redRun.rules}
                   patch={evaluatedPatch} candidateReady={!!report} approval={approval}
                   otherCustomers={world?.customers ?? null} onRerun={runRed} loading={loading} />
               ) : baseline ? (

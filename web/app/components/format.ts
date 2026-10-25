@@ -19,6 +19,11 @@ export function dollars(cents: number) {
   return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+// Rounded to the dollar, for headline figures.
+export function wholeDollars(cents: number) {
+  return dollars(Math.round(cents / 100) * 100);
+}
+
 export function formatFeature(key: string, value: number) {
   if (AMOUNT_FEATURES.has(key)) return dollars(value);
   if (key === "pass_through_ratio") return `${Math.round(value * 100)}%`;
