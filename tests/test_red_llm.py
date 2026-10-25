@@ -108,3 +108,19 @@ def test_llm_repeating_history_falls_back(tmp_path):
     run = red_run(tmp_path, LLMRedPolicy(adapter))
     assert run["bypass"] is not None
     assert run["history"][-1]["recipe"] != naive
+
+def test_env_llm_without_an_adapter_fails_at_startup(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setenv("SENTINEL_RED", "llm")
+    monkeypatch.setenv("SENTINEL_LLM_MODE", "fixture")
+    with pytest.raises(ValueError, match="SENTINEL_LLM_MODE"):
+        create_app(str(tmp_path / "app.db"))
+
+
+def test_env_llm_with_an_adapter_uses_llm_red(tmp_path, monkeypatch):
+    monkeypatch.setenv("SENTINEL_RED", "llm")
+    adapter, sent = recording_adapter(tmp_path, lambda r: {"recipes": [recipe()]})
+    with TestClient(create_app(str(tmp_path / "app.db"), adapter=adapter)) as client:
+        lab = client.post("/labs", json=CONFIG).json()["lab_id"]
+        assert client.post(f"/labs/{lab}/red-runs", json={}).status_code == 201
+    assert any(r["role"] == "red" for r in sent)

@@ -64,13 +64,17 @@ class ApprovalRequest(Body):
     decision: Literal["approve", "reject"]
 
 
-RED_POLICIES = {"heuristic": red.HeuristicRedPolicy, "fixture": red.FixtureRedPolicy}
+RED_POLICIES = {"heuristic": red.HeuristicRedPolicy, "fixture": red.FixtureRedPolicy, "llm": red.LLMRedPolicy}
 
 
-def red_policy_from_env() -> red.FixtureRedPolicy | red.HeuristicRedPolicy:
+def red_policy_from_env(adapter=None):
     name = os.environ.get("SENTINEL_RED", "heuristic")
     if name not in RED_POLICIES:
         raise ValueError(f"SENTINEL_RED={name!r}; expected one of {sorted(RED_POLICIES)}")
+    if name == "llm":
+        if adapter is None:
+            raise ValueError("SENTINEL_RED=llm needs SENTINEL_LLM_MODE=live or replay")
+        return red.LLMRedPolicy(adapter)
     return RED_POLICIES[name]()
 
 
@@ -81,10 +85,10 @@ def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list
 
 
 def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> FastAPI:
-    red_policy = red_policy or red_policy_from_env() # if sentinel_red fails at start up
     db_path = db_path or os.environ.get("SENTINEL_DB", "sentinel.db")
     store = Store(db_path)
     adapter = adapter if adapter is not None else from_env(db_path)
+    red_policy = red_policy or red_policy_from_env(adapter)   # an unknown SENTINEL_RED fails here, at startup
     executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sentinel")
     slots = BoundedSemaphore(4)  # total admitted background + synchronous steps
     workers = BoundedSemaphore(2)
