@@ -38,6 +38,14 @@ export default function ApprovalStep({ report, approval, onDecide, loading }: {
             </div>
           )}
 
+          {!approval.rechallenge && (
+            <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              {approval.completion_pending
+                ? "Running the rechallenge…"
+                : "The rechallenge hasn't finished yet. Your decision is saved; check back in a moment."}
+            </div>
+          )}
+
           {approval.rechallenge && (
             <div className={`rounded-lg border-2 p-4 ${approval.rechallenge.alert ? "border-emerald-300 bg-emerald-50" : "border-red-300 bg-red-50"}`}>
               <p className="font-semibold">

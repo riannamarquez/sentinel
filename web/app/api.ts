@@ -54,6 +54,7 @@ export type Confusion = { tp: number; fp: number; tn: number; fn: number };
 export type GateResult = { name: string; passed: boolean; detail: string };
 export type EvaluationReport = {
   report_id: string;
+  patch_id: string;
   benign_n: number;
   attack_n: number;
   baseline_confusion: Record<string, Confusion>;
@@ -64,11 +65,28 @@ export type EvaluationReport = {
 };
 export type MissReason = { reason: string; label: string; count: number };
 export type Decision = "approve" | "reject";
+export type Rechallenge = { alert: boolean; triggered_rule_ids: string[] };
 export type Approval = {
   decision: Decision;
   version_created: number | null;
   active_version: number;
-  rechallenge: { alert: boolean; triggered_rule_ids: string[] } | null;
+  completion_pending: boolean;   // the decision is saved but the rechallenge hasn't run yet
+  rechallenge: Rechallenge | null;
+};
+export type ReplayChoice = "base" | "candidate" | "active";
+export type HopReplay = { hop_index: number; transaction_id: string; scored: boolean; alerted: boolean; rule_ids: string[] };
+// Red's bypass re-scored by the backend against a chosen rule set; the frontend never scores rules itself.
+export type BypassReplay = {
+  rules: ReplayChoice;
+  detector_label: string;
+  detector_version: number | null;
+  patch_id: string | null;
+  alert: boolean;
+  triggered_rule_ids: string[];
+  first_alert_time: number | null;
+  alert_transaction_id: string | null;
+  alert_hop_index: number | null;
+  per_hop: HopReplay[];
 };
 
 const UNREACHABLE = "Can't reach the Sentinel backend. Is `make run` running in the repo folder?";
@@ -83,6 +101,12 @@ const REASONS: Record<string, string> = {
   invalid_transition: "The round can't move to that step from where it is now.",
   not_found: "The backend doesn't know this lab or run. It may have restarted, so create a new lab.",
   unsupported: "The backend doesn't support that request.",
+  proposal_failed: "Blue couldn't produce a valid fix. Try again.",
+  step_running: "That step is still running — wait a moment.",
+  server_stopping: "The backend is restarting. Try again in a few seconds.",
+  queue_full: "The server is busy. Try again in a moment.",
+  no_bypass: "Red didn't find a bypass in this run, so there's nothing to replay.",
+  no_valid_patch: "There's no valid fix to replay yet. Ask Blue for a fix first.",
 };
 
 // What the UI shows: a plain-English sentence, plus the server's detail when it sent one.
@@ -117,8 +141,10 @@ async function request(path: string, body?: unknown, method: "GET" | "POST" = "P
     return data;
   }
   if (data === null && [500, 502, 503, 504].includes(res.status)) throw new ApiError(UNREACHABLE);
-  const detail = detailText(data?.detail);
-  const reason = REASONS[data?.reason];
+  // Most errors are {reason, detail}; a few (e.g. queue_full's 503) nest them: {detail: {reason, detail}}.
+  const nested = data?.detail && typeof data.detail === "object" && !Array.isArray(data.detail) ? data.detail : null;
+  const reason = REASONS[data?.reason ?? nested?.reason];
+  const detail = detailText(nested ? nested.detail : data?.detail);
   throw new ApiError(reason ?? `Something went wrong (status ${res.status})`, detail);
 }
 
@@ -130,15 +156,25 @@ export async function runBaseline(labId: string): Promise<BaselineResult[]> {
   return (await request(`/labs/${labId}/baseline`)).results;
 }
 
+// The rule definitions of one detector version, from the lab's version history.
+export async function getRules(labId: string, version: number): Promise<Rule[] | null> {
+  const lab = await request(`/labs/${labId}`, undefined, "GET");
+  return lab.versions?.find((v: { version: number }) => v.version === version)?.rules ?? null;
+}
+
 export async function startRedRun(labId: string): Promise<RedRun> {
   const data = await request(`/labs/${labId}/red-runs`, {});
   const bypass: Bypass | null = data.bypass;
-  let rules: Rule[] | null = null;
-  if (bypass) {
-    const lab = await request(`/labs/${labId}`, undefined, "GET");
-    rules = lab.versions?.find((v: { version: number }) => v.version === bypass.detector_version)?.rules ?? null;
-  }
+  const rules = bypass ? await getRules(labId, bypass.detector_version) : null;
   return { run_id: data.run_id, turns: data.turns, bypass, rules };
+}
+
+export function replayBypass(labId: string, runId: string, rules: ReplayChoice): Promise<BypassReplay> {
+  return request(`/labs/${labId}/runs/${runId}/replay-bypass`, { rules });
+}
+
+export async function getRechallenge(runId: string): Promise<Rechallenge | null> {
+  return (await request(`/runs/${runId}`, undefined, "GET")).rechallenge ?? null;
 }
 
 export async function proposePatches(labId: string, runId: string, bypassId: string): Promise<PatchRun> {
@@ -156,6 +192,7 @@ export async function decide(labId: string, reportId: string, decision: Decision
     decision: data.decision,
     version_created: data.version_created,
     active_version: data.active_version,
-    rechallenge: data.rechallenge,
+    completion_pending: !!data.completion_pending,
+    rechallenge: data.rechallenge ?? null,
   };
 }

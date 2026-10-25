@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "./api";
 import ApprovalStep from "./components/ApprovalStep";
 import BaselineStep from "./components/BaselineStep";
@@ -31,6 +31,8 @@ export default function Home() {
   const [introDismissed, setIntroDismissed] = useIntroDismissed();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<StepError | null>(null);
+  // The run whose rechallenge is being polled; cleared when the round is reset so stale polls stop.
+  const pollingRun = useRef<string | null>(null);
   // A fresh object each time, so asking for the same target twice still scrolls.
   const [scrollTarget, setScrollTarget] = useState<{ id: string } | null>(null);
 
@@ -64,6 +66,7 @@ export default function Home() {
   }
 
   function createLab() {
+    pollingRun.current = null;
     setBaseline(null);
     setRedRun(null);
     setPatchRun(null);
@@ -90,6 +93,7 @@ export default function Home() {
 
   function runRed() {
     if (!labId) return;
+    pollingRun.current = null;
     setPatchRun(null);
     setPatchId(null);
     setReport(null);
@@ -124,13 +128,33 @@ export default function Home() {
     });
   }
 
+  // The decision is saved before the rechallenge runs; poll the run until its result appears.
+  async function pollRechallenge(runId: string) {
+    pollingRun.current = runId;
+    for (let i = 0; i < 60 && pollingRun.current === runId; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const rechallenge = await api.getRechallenge(runId);
+        if (rechallenge && pollingRun.current === runId) {
+          setApproval((a) => a && { ...a, rechallenge, completion_pending: false });
+          return;
+        }
+      } catch {
+        // A blip while the backend works; keep polling.
+      }
+    }
+    if (pollingRun.current === runId) setApproval((a) => a && { ...a, completion_pending: false });
+  }
+
   function decide(decision: api.Decision) {
-    if (!labId || !report) return;
+    if (!labId || !report || !redRun) return;
+    const runId = redRun.run_id;
     return run("decide", () => decide(decision), async () => {
       const result = await api.decide(labId, report.report_id, decision);
       setApproval(result);
       setActiveVersion(result.active_version);
       setScrollTarget({ id: "approval-result" });
+      if (result.completion_pending && !result.rechallenge) void pollRechallenge(runId);
     });
   }
 
@@ -165,8 +189,11 @@ export default function Home() {
       <div className="mx-auto grid max-w-[1680px] gap-6 p-6 xl:grid-cols-[20rem_minmax(0,1fr)_26rem]">
         {/* Left: network map */}
         <aside className="xl:sticky xl:top-24 xl:self-start">
-          <div className={`h-[32rem] overflow-hidden rounded-xl bg-white xl:h-[calc(100vh-7.5rem)] ${redRun?.bypass ? "border shadow-sm" : "border-2 border-dashed border-slate-300"}`}>
-            <NetworkMap bypass={redRun?.bypass ?? null} redRan={!!redRun} rechallenge={approval?.rechallenge ?? null} />
+          <div className={`max-h-[48rem] overflow-y-auto rounded-xl bg-white xl:h-[calc(100vh-7.5rem)] xl:max-h-none ${redRun?.bypass ? "border shadow-sm" : "h-64 border-2 border-dashed border-slate-300"}`}>
+            <NetworkMap labId={labId} runId={redRun?.run_id ?? null} bypass={redRun?.bypass ?? null} redRan={!!redRun}
+              baseRules={redRun?.rules ?? null}
+              patch={patchRun?.patches.find((p) => p.patch.patch_id === report?.patch_id)?.patch ?? null}
+              candidateReady={!!report} approval={approval} otherCustomers={world?.customers ?? null} />
           </div>
         </aside>
 
