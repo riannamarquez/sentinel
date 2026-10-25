@@ -66,3 +66,26 @@ function describeCondition(c: Condition) {
 export function describeRule(all_of: Condition[]) {
   return `Alarm if ${all_of.map(describeCondition).join(", and ")}.`;
 }
+
+// Short names for a one-line "why it fired", e.g. "Hop count reached 4 within 72 h".
+const SHORT_FEATURES: Record<string, string> = {
+  velocity_out_count: "Transfers out",
+  velocity_out_amount: "Money sent out",
+  velocity_in_amount: "Money received",
+  transfer_amount: "Transfer size",
+  near_threshold_amount: "Near-limit transfers",
+  pass_through_ratio: "Pass-through share",
+  min_hold_hours: "Hold time",
+  short_hold_hop_count: "Hop count",
+};
+const REACHED: Record<string, string> = { ">=": "reached", ">": "went over", "<=": "was at most", "<": "stayed under" };
+
+/** What a fired rule's conditions mean, from its definition. Only valid for a rule that fired. */
+export function describeFiring(all_of: Condition[]) {
+  return all_of.map((c) => {
+    if (c.feature_key === "new_device_before_transfer") return "A new device was used before the transfer";
+    const within = c.window_hours ? ` within ${c.window_hours} h` : "";
+    const name = SHORT_FEATURES[c.feature_key] ?? c.feature_key;
+    return `${name} ${REACHED[c.operator] ?? c.operator} ${formatFeature(c.feature_key, c.threshold)}${within}`;
+  }).join(", and ");
+}

@@ -269,6 +269,31 @@ class RuleDiagnosis(Model):
     conditions: list[ConditionDiagnosis]
 
 
+class HopReplay(Model):
+    """One transfer of a replayed bypass. Only transfers sent from an account the scenario owns are scored."""
+    hop_index: int = Field(ge=1)          # 1-based position in the bypass's time-ordered transactions
+    transaction_id: Id
+    scored: bool
+    alerted: bool                         # at least one rule fires on this transfer
+    rule_ids: list[str]
+
+
+class BypassReplay(Model):
+    """Red's bypass scenario re-scored against a chosen rule set (base, candidate or active)."""
+    run_id: Id
+    bypass_id: Id
+    rules: Literal["base", "candidate", "active"]
+    detector_label: str
+    detector_version: Version | None      # None for a candidate that hasn't been approved
+    patch_id: Id | None = None
+    alert: bool
+    triggered_rule_ids: list[str]
+    first_alert_time: Timestamp | None
+    alert_transaction_id: Id | None
+    alert_hop_index: int | None
+    per_hop: list[HopReplay]
+
+
 class BypassTrace(Model):
     """Red's output: a scenario that moved money without an alert, and why it worked."""
     bypass_id: Id
@@ -297,6 +322,16 @@ class GateResult(Model):
     detail: str = Field(default="", max_length=500)
 
 
+MissReasonCode = Literal["long_hold", "short_chain", "low_carry", "other"]
+
+
+class MissReason(Model):
+    """One bucket of final-holdout attacks the candidate rules did not flag."""
+    reason: MissReasonCode
+    label: str = Field(max_length=100)
+    count: Count
+
+
 class EvaluationReport(Model):
     report_id: Id
     run_id: Id
@@ -318,6 +353,8 @@ class EvaluationReport(Model):
     gate_pass: bool
     gate_results: list[GateResult]
     eligible_for_approval: bool
+    # Defaults to empty so reports stored before this field existed still load.
+    missed_breakdown: list[MissReason] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def _check(self) -> EvaluationReport:
@@ -325,6 +362,9 @@ class EvaluationReport(Model):
             raise ValueError("gate_pass must equal all(gate_results.passed)")
         if self.eligible_for_approval != self.gate_pass:
             raise ValueError("eligible_for_approval must equal gate_pass")
+        missed = self.candidate_confusion.get(Split.FINAL_HOLDOUT)
+        if self.missed_breakdown and missed and sum(m.count for m in self.missed_breakdown) != missed.fn:
+            raise ValueError("missed_breakdown counts must sum to the missed final-holdout attacks")
         return self
 
 

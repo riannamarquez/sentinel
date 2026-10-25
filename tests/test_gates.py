@@ -54,3 +54,17 @@ def test_a_patch_that_flags_everything_fails_the_fpr_gate(fixture_splits):
     by_name = {g.name: g for g in report.gate_results}
     assert not by_name["fpr_budget"].passed
     assert not report.eligible_for_approval
+
+
+def test_missed_breakdown_sums_to_missed_holdout_attacks_for_seed_7(candidate_rules):
+    from sentinel.scenarios.factory import build_splits
+    report = evaluate(report_id="r3", run_id="run1", patch_id=load_golden_patch().patch_id,
+                      splits=build_splits(7, 500, 8), baseline_rules=BASELINE_V1, baseline_version=1,
+                      candidate_rules=candidate_rules)
+    missed = report.candidate_confusion[Split.FINAL_HOLDOUT].fn
+    assert missed > 0
+    assert sum(m.count for m in report.missed_breakdown) == missed
+    # R4's two blind spots in design-v2 §10: one mule sitting on the money > 24 h, and one-mule chains.
+    assert {m.reason: m.count for m in report.missed_breakdown} == {"long_hold": 8, "short_chain": 8}
+    assert [m.label for m in report.missed_breakdown] == [
+        "Held money longer than 24 hours", "Chain too short (under 4 hops)"]
