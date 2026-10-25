@@ -30,20 +30,41 @@ export default function BlueStep({ patchRun, selectedPatchId, onAsk, loading }: 
 
   if (!patchRun) {
     return (
-      <StepCard id="step-blue" label="Blue agent proposal" labelTone="lavender" labelIcon={SparkleIcon}
-        title="Ask Blue to close the gap" subtitle="Blue proposes a rule change to close the gap Red found."
+      <StepCard id="step-blue" label="Step 4 · Blue agent · Defender" labelTone="lavender" labelIcon={SparkleIcon}
+        title="Let Blue test and refine a defense" subtitle="Blue proposes a rule, tests it on development data, and uses the feedback to revise it for up to three turns. The final holdout is tested separately."
         action={<button onClick={onAsk} disabled={loading} className={BUTTON_PRIMARY}>Ask Blue for a fix</button>} />
     );
   }
 
   return (
-    <StepCard id="step-blue" label="Blue agent proposal" labelTone="lavender" labelIcon={SparkleIcon}
+    <StepCard id="step-blue" label="Step 4 · Blue agent · Defender" labelTone="lavender" labelIcon={SparkleIcon}
       title={selected ? ruleTitle(selected.patch) : "No valid proposal"}
-      action={selected ? <Chip icon={CheckIcon}>Valid rule</Chip> : <Chip tone="coral">Rejected</Chip>}>
+      subtitle={selected ? "Blue’s proposed fix. Test it on unseen data before deciding whether to activate it." : undefined}
+      action={selected ? <Chip icon={CheckIcon}>Valid proposal</Chip> : <Chip tone="coral">Rejected</Chip>}>
       {patchRun.state === "failed" && (
         <p className="mb-5 rounded-[2px] border-l-2 border-coral bg-red-panel p-4 text-[15px] text-coral">
-          Blue couldn&apos;t propose a valid fix. Every suggestion below was rejected before testing.
+          {patchRun.blue_history?.length ? "Blue reached its repair limit without a development-ready fix. Inspect its test history, then start another round." : "Blue couldn’t propose a valid fix. Inspect the rejected proposals below."}
         </p>
+      )}
+
+      {!!patchRun.blue_history?.length && (
+        <details className="review-disclosure mb-5">
+          <summary>Blue’s repair loop · {patchRun.blue_history.length} turn{patchRun.blue_history.length === 1 ? "" : "s"}</summary>
+          <p className="mb-4 text-[12px] text-muted">These are development checks. The independent holdout evaluation still comes next.</p>
+          <ol className="space-y-4">
+            {patchRun.blue_history.map((turn) => (
+              <li key={turn.turn} className="border-l border-line pl-3">
+                <p className="font-mono text-[12px] text-lavender">Turn {turn.turn}</p>
+                {turn.feedback.map((result) => (
+                  <div key={result.patch.patch_id} className="mt-2 text-[12px]">
+                    <p className="text-ink">{result.patch.patch_id} · {result.acceptable ? "Development checks passed" : "Needs revision"}</p>
+                    <p className="mt-1 text-muted">{result.error ?? `${result.bypass_caught ? "Catches" : "Misses"} Red’s attack · ${result.search_after.fp - result.search_before.fp} net new search false positives · ${result.regression_attacks_lost} regression catches lost`}</p>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
 
       {selected?.patch.all_of && (

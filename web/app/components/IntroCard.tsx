@@ -28,21 +28,21 @@ export function useIntroDismissed() {
 }
 
 const POINTS = [
-  { title: "The problem", text: "Fraud rules are built from past attacks, so new tactics can slip through." },
+  { title: "Set up", text: "Create a synthetic bank, then run the baseline to see what its current fraud rules catch." },
   {
-    title: "How Sentinel works",
-    text: "Red (an AI attacker) looks for a gap in the rules. Blue (an AI defender) proposes a fix. Plain code tests the fix on data neither AI has seen.",
+    title: "Run the agents",
+    text: "Start Red to find an attack that slips through. Then ask Blue to propose a defense against it.",
   },
-  { title: "Your role", text: "Review the evidence, then approve or reject the fix." },
+  { title: "Test and decide", text: "Run the independent evaluation. Review the results, then approve or reject Blue’s proposed rule." },
 ];
 
 export default function IntroCard({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <section id="intro" className="scroll-mt-28 rounded-[3px] border border-lavender/40 bg-lavender-panel/60 p-7">
+    <section id="intro" className="review-intro scroll-mt-8">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <p className="label-caps mb-2 text-lavender">Methodology</p>
-          <h2 className="text-[26px] leading-tight text-ink">What you&apos;re looking at</h2>
+          <h2 className="text-ink">How to run this experiment</h2>
         </div>
         <button onClick={onDismiss} className={BUTTON_SECONDARY}>Got it</button>
       </div>

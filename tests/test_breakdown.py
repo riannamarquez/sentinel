@@ -27,7 +27,7 @@ def holdout():
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.delenv("SENTINEL_LLM_MODE", raising=False)
+    monkeypatch.setenv("SENTINEL_LLM_MODE", "fixture")
     monkeypatch.setattr(blue, "propose", lambda bypass, rules, base_version, **kw:
                         [load_golden_patch().model_copy(update={"base_version": base_version})])
     with TestClient(create_app(str(tmp_path / "app.db"), red_policy=FixtureRedPolicy())) as c:

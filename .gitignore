@@ -6,3 +6,6 @@ __pycache__/
 *.db-wal
 *.db-shm
 .env
+
+# Local Juice Shop runtime, dependencies, databases and evidence
+.local/

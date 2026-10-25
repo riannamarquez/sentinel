@@ -1,13 +1,5 @@
 import type { Metadata } from "next";
-import { Newsreader } from "next/font/google";
 import "./globals.css";
-
-// The one typeface; the theme in globals.css reads it through --font-newsreader.
-const newsreader = Newsreader({
-  variable: "--font-newsreader",
-  subsets: ["latin"],
-  axes: ["opsz"],
-});
 
 export const metadata: Metadata = {
   title: "Sentinel · Rule change review",
@@ -16,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${newsreader.variable} h-full antialiased`}>
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

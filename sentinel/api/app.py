@@ -137,7 +137,9 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
 
     @app.get("/healthz")
     def healthz():
-        return {"ok": True, "llm": adapter.mode if adapter else "fixture", "journal_mode": store.journal_mode()}
+        red_mode = {red.HeuristicRedPolicy: 'heuristic', red.FixtureRedPolicy: 'fixture', red.LLMRedPolicy: 'llm'}.get(type(red_policy), 'custom')
+        return {"ok": True, "llm": adapter.mode if adapter else "fixture", "red_policy": red_mode,
+                "blue_policy": 'agent' if adapter else 'fixture', "journal_mode": store.journal_mode()}
 
     @app.post("/labs", status_code=201)
     def create_lab(config: BankConfig):
@@ -217,8 +219,15 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
         rules = store.rules(lab_id, run["base_version"])
         store.transition(body.run_id, S.BLUE_PROPOSES, actor="agent:blue", inp=trace)
         try:
-            proposed = (blue.propose(trace, rules, run["base_version"], adapter=adapter) if adapter
-                        else blue.propose(trace, rules, run["base_version"]))
+            if adapter:
+                config = store.lab(lab_id)['config']
+                splits = lab_splits(config.seed, config.holdout_benign_n, config.holdout_attack_copies)
+                repair = blue.run_repair(trace, rules, run['base_version'], adapter=adapter,
+                    development={split: splits[split] for split in (Split.SEARCH, Split.REGRESSION)},
+                    on_turn=lambda record: store.save_blue_turn(body.run_id, record))
+                proposed = [repair.selected] if repair.selected else []
+            else:
+                proposed = blue.propose(trace, rules, run['base_version'])
         except AdapterError:
             store.transition(body.run_id, S.FAILED, failure="Blue proposal failed; evidence in LLM recording store")
             raise Conflict("proposal_failed", "Blue proposal failed closed")
@@ -234,10 +243,10 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
             store.save_patch(body.run_id, p, error)
             out.append({"patch": p, "valid": error is None, "error": error})
         if not any(o["valid"] for o in out):
-            store.transition(body.run_id, S.FAILED, failure="no valid patch")
-            return {"run_id": body.run_id, "state": S.FAILED, "patches": out}
+            store.transition(body.run_id, S.FAILED, failure="no development-ready patch" if adapter else "no valid patch")
+            return {"run_id": body.run_id, "state": S.FAILED, "patches": out, "blue_history": store.blue_history(body.run_id)}
         store.transition(body.run_id, S.VALIDATE_PATCH, out=out)
-        return {"run_id": body.run_id, "state": S.VALIDATE_PATCH, "patches": out}
+        return {"run_id": body.run_id, "state": S.VALIDATE_PATCH, "patches": out, "blue_history": store.blue_history(body.run_id)}
 
     def process_evaluation(lab_id: str, body: EvaluationRequest):
         run = store.run(body.run_id, lab_id)
@@ -474,6 +483,7 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
                                            blue.BlueProposal, 'blue-v1')
                 request['model'] = adapter.model
                 keys.add(sha256_of(request))
+            keys.update(turn['input_hash'] for run in bundle['runs'] for turn in run.get('blue_history', []))
             bundle["llm_model"] = adapter.model
             bundle["llm_recordings"] = [r for r in adapter.store.export() if r['input_hash'] in keys]
         return bundle

@@ -1,4 +1,4 @@
-import type { RedRun } from "../api";
+import type { RedAttempt, RedRun } from "../api";
 import AttackTimeline from "./AttackTimeline";
 import { analyzeChain } from "./attackChain";
 import { ruleTimeLimits, silenceSentence, timeline, windowFor, type HoldBar } from "./bypassExplain";
@@ -22,14 +22,15 @@ export default function RedStep({ redRun, onRun, loading }: {
   loading: boolean;
 }) {
   return (
-    <StepCard id="step-red" label="Red agent finding" labelTone="coral" title="Red challenge"
-      subtitle="Red tries to move stolen money out without triggering any rule.">
+    <StepCard id="step-red" label="Step 3 · Red agent · Attacker" labelTone="coral" title="Let Red test the bank’s defenses"
+      subtitle="Red builds simulated attacks and tests them against the current fraud rules. Its goal is to move stolen money out without an alert.">
       {redRun && !redRun.bypass && (
         <div className="mb-5 rounded-[2px] border-l-2 border-mint bg-green-panel p-4">
           <p className="text-[16px] text-ink">Red tried {redRun.turns} times and couldn&apos;t get past the rules.</p>
           <p className="mt-1 text-[15px] text-muted">The current rules held, so there&apos;s no gap for Blue to fix this round.</p>
         </div>
       )}
+      {redRun && <RedSearchHistory history={redRun.history} turns={redRun.turns} />}
       <button onClick={onRun} disabled={loading} className={`${BUTTON_ATTACK} w-full`}>
         {redRun ? "Run Red again" : "Start Red challenge"}
       </button>
@@ -43,7 +44,7 @@ export function WhyItGotThrough({ redRun }: { redRun: RedRun }) {
   const { bars, totalH } = timeline(analyzeChain(bypass));
   const limits = redRun.rules ? ruleTimeLimits(redRun.rules) : null;
   return (
-    <StepCard id="red-result" label="Red agent finding · Timeline" labelTone="coral" title="Why no rule fired"
+    <StepCard id="red-result" label="Red agent · Attack evidence" labelTone="coral" title="Why no rule fired"
       subtitle={silenceSentence(bars, limits ?? [], bypass)}>
       <div className="space-y-6">
         {bars.length > 0 && <AttackTimeline bars={bars} totalH={totalH} limits={limits} />}
@@ -92,5 +93,25 @@ export function WhyItGotThrough({ redRun }: { redRun: RedRun }) {
         </div>
       </div>
     </StepCard>
+  );
+}
+
+
+export function RedSearchHistory({ history, turns }: { history?: RedAttempt[]; turns: number }) {
+  if (!history?.length) return null;
+  return (
+    <details className="review-disclosure mb-5">
+      <summary>Red’s search · {history.length} candidate{history.length === 1 ? "" : "s"} · {turns} turn{turns === 1 ? "" : "s"}</summary>
+      <p className="mb-3 text-[12px] leading-relaxed text-muted">Red uses earlier test results to revise its next attack.</p>
+      <ol className="space-y-3">
+        {history.map((attempt, index) => (
+          <li key={`${attempt.turn}-${index}`} className="border-l border-line pl-3 text-[12px]">
+            <span className="font-mono text-coral">Turn {attempt.turn}</span>
+            <p className="mt-1 text-ink">{attempt.rules_fired.length ? `Caught by ${attempt.rules_fired.join(", ")}` : "No alert"}</p>
+            <p className="text-muted">Moved ${(attempt.moved_cents / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })} to cash-out</p>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }

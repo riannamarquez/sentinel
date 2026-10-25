@@ -18,6 +18,20 @@ Open http://localhost:3000 and leave the default seed (7).
 
 Other targets: `make test` runs the backend tests (42 pass), and `make feasibility` re-runs the offline check behind the numbers below.
 
+## Presentation demo
+
+Open **http://localhost:3000/demo** after starting the frontend (`cd web && npm run dev`). The home page also links to **Workflow demo**. No backend or API keys are needed for this view.
+
+The presentation shows one stage at a time: synthetic bank → baseline → Red attack → Blue proposal → independent evaluation → human decision → fresh rechallenge. Use Next and Back, or select a stage in the progress bar. At the decision, choose Approve or Reject; use **Try the other decision** to compare the consequences. Restart resets the presentation.
+
+This is an explicitly labeled offline replay, using fixed Red/Blue proposals and actual API/evaluator results captured in isolated temporary databases. Decisions in the presentation do not alter the interactive lab. The final stage exposes the recorded audit trail.
+
+To regenerate both recorded branches from the current backend, run from the repository root:
+
+```bash
+SENTINEL_LLM_MODE=fixture .venv/bin/python -m scripts.capture_demo
+```
+
 ## The demo, step by step
 
 1. **Create a fake bank.** This generates a seeded synthetic credit union. Seed 7 with 200 accounts gives 167 customers and 9,691 transactions.

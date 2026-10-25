@@ -1,5 +1,6 @@
 "use client";
 
+import { RedSearchHistory } from "./RedStep";
 import { Fragment, useEffect, useState } from "react";
 import * as api from "../api";
 import { analyzeChain, type AttackChain } from "./attackChain";
@@ -79,13 +80,13 @@ function Chain({ chain, replay }: { chain: AttackChain; replay: api.BypassReplay
             )}
             <li className={`flex gap-4 ${never ? "opacity-40" : ""}`}>
               <span className="w-9 pt-4 text-[15px] tabular-nums text-coral">{String(++n).padStart(2, "0")}</span>
-              <div className="grid flex-1 gap-2" style={{ gridTemplateColumns: `repeat(${column.length}, minmax(0, 1fr))` }}>
+              <div className="grid min-w-0 flex-1 gap-2" style={{ gridTemplateColumns: `repeat(${column.length}, minmax(0, 1fr))` }}>
                 {column.map((id) => {
                   const inside = chain.owned.has(id);
                   const f = accountFigures(chain, id);
                   return (
                     <div key={id} className={`rounded-[2px] border px-4 py-3 ${inside ? "border-line bg-card-raised" : "border-dashed border-muted/50 bg-page/40"}`}>
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <span className="text-[17px] text-ink">{chain.labels.get(id)}</span>
                         <span className="text-[16px] tabular-nums text-ink">{wholeDollars(f.cents)}</span>
                       </div>
@@ -120,7 +121,7 @@ function RechallengeBanner({ rechallenge }: { rechallenge: api.Rechallenge }) {
   );
 }
 
-export default function NetworkMap({ labId, runId, bypass, baseRules, patch, candidateReady, approval, otherCustomers, onRerun, loading }: {
+export default function NetworkMap({ labId, runId, bypass, baseRules, patch, candidateReady, approval, otherCustomers, onRerun, loading, searchHistory, turns = 1 }: {
   labId: string | null;
   runId: string | null;
   bypass: api.Bypass;
@@ -129,6 +130,8 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
   candidateReady: boolean;              // a valid patch has been evaluated
   approval: api.Approval | null;
   otherCustomers: number | null;
+  searchHistory?: api.RedAttempt[];
+  turns?: number;
   onRerun: () => void;
   loading: boolean;
 }) {
@@ -175,7 +178,7 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
   const why = silenceSentence(bars, baseRules ? ruleTimeLimits(baseRules) : [], bypass);
 
   const toggle = (choice: View, label: string, disabled: boolean) => (
-    <span title={disabled ? "Ask Blue for a fix first" : undefined} className="min-w-0 flex-1">
+    <span title={disabled ? "Run evaluation first to compare the proposed fix" : undefined} className="min-w-0 flex-1">
       <button onClick={() => setView(choice)} disabled={disabled} aria-pressed={shown === choice}
         className={`w-full rounded-[2px] border px-3 py-2 text-[14px] disabled:cursor-not-allowed disabled:opacity-40 ${
           shown === choice ? "border-lavender bg-lavender-panel text-lavender" : "border-line text-muted hover:text-ink"}`}>
@@ -185,10 +188,10 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
   );
 
   return (
-    <StepCard id="attack-path" label="Red agent finding" labelTone="coral"
+    <StepCard id="attack-path" label="Step 3 · Red agent · Attacker" labelTone="coral"
       title={
         <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          Attack path
+          Red&apos;s attack path
           {!replay ? <Chip tone="muted">Replaying</Chip>
             : replay.alert ? <Chip tone="mint">Caught</Chip> : <Chip tone="coral">Slipped through</Chip>}
         </span>
@@ -196,6 +199,10 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
       subtitle={replay?.alert
         ? `${replay.detector_label} flags this ${insideCount}-account chain at hop ${replay.alert_hop_index} of ${chain.transfers.length}.`
         : `A ${insideCount}-account mule chain moved funds outside the bank without triggering a rule.`}>
+      <RedSearchHistory history={searchHistory} turns={turns} />
+      <p className="mb-3 text-[13px] leading-snug text-muted">
+        Compare the same attack before and after the proposed fix. The proposal becomes active only after approval.
+      </p>
       <div className="mb-5 flex gap-2">
         {toggle("base", v1Label, false)}
         {toggle("candidate", v2Label, !candidateReady)}
@@ -217,7 +224,7 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
         ) : replay.alert ? (
           <div className="border-y border-mint/30 bg-green-panel px-7 py-6">
             <p className="label-caps text-mint">Caught by {replay.triggered_rule_ids.join(", ")}</p>
-            <p className="mt-2 text-[44px] leading-none tabular-nums text-mint">{wholeDollars(reachedCents)}</p>
+            <p className="mt-2 text-[38px] leading-none tabular-nums text-mint">{wholeDollars(reachedCents)}</p>
             <p className="mt-3 text-[15px] tabular-nums text-muted">
               flagged at hop {replay.alert_hop_index}{share && ` · ${share}`}
             </p>
@@ -228,7 +235,7 @@ export default function NetworkMap({ labId, runId, bypass, baseRules, patch, can
         ) : (
           <div className="border-y border-coral/30 bg-red-panel px-7 py-6">
             <p className="label-caps text-coral">Escaped undetected</p>
-            <p className="mt-2 text-[44px] leading-none tabular-nums text-coral">{wholeDollars(reachedCents)}</p>
+            <p className="mt-2 text-[38px] leading-none tabular-nums text-coral">{wholeDollars(reachedCents)}</p>
             {share && <p className="mt-3 text-[15px] tabular-nums text-muted">{share}</p>}
           </div>
         )}

@@ -10,7 +10,7 @@ make test
 make run
 ```
 
-The default is **fixture** mode: no credentials or network required. `/healthz` reports `fixture`, `live`, or `replay`. Red remains Backend 1's fixture implementation; the new adapter is wired to Blue.
+The default is **fixture** mode: no credentials or network required. `/healthz` reports `fixture`, `live`, or `replay`. Red defaults to Backend 1's heuristic policy (`SENTINEL_RED=heuristic`); use `SENTINEL_RED=fixture` for fixture replay. The Gemini adapter is wired to Blue. Inject a policy with `create_app(db_path, red_policy=..., adapter=...)` for tests. `.env` loads before either policy or adapter is configured.
 
 The backend automatically loads `.env` from the current working directory when `create_app` runs. Run `make run` from the repository root. Existing environment variables take precedence; missing `.env` files are allowed. `.env` is gitignored, and `.env.example` contains no credentials.
 
@@ -41,7 +41,8 @@ Existing synchronous request/response shapes still work with the frontend. For B
 - `POST /labs/{id}/approvals`: `{report_id, decision}` → version or rejection, plus rechallenge. Stale-base checks and idempotency are enforced in the decision transaction. The detector change, decision state and pending rechallenge job commit together. Rechallenge uses the decision-time detector version. Simultaneous identical decisions return the same event. If completion fails, the response includes `completion_pending: true`; retry the identical decision or restart the server to resume it.
 - `GET /runs/{run_id}`: state, failure, bypasses, patch validation results, reports, audit events and rechallenge. Use this to fetch results after a background step.
 - `GET /runs/{run_id}/events`: SSE state events with persistent sequence IDs. Reconnect using `Last-Event-ID`. A stream closes at a terminal state or a step boundary awaiting another request; reconnect after submitting the next step. Events contain audit metadata; artifacts come from the run endpoint.
-- `GET /labs/{id}/timeline`: regenerated deterministic world transactions, bypass transactions and audit events.
+- `GET /labs/{id}/timeline?run_id=...&version=...`: per-run attack graph, transfers and detector results; `version` defaults to the run’s base version.
+- `GET /labs/{id}/world`: regenerated deterministic world transactions, bypass transactions and audit events.
 - `GET /labs/{id}/reports`: evaluator reports and detector history.
 - `GET /labs/{id}/replay`: version-2 lab JSON from a single SQLite read snapshot, with configuration, versions, run-owned artifacts, approvals, audit events, and matching Blue recordings. Flat playback collections remain available. Blue recordings are committed before patch artifacts, then filtered to the snapshot’s bypass inputs. Recordings belonging to other lab inputs are excluded.
 
@@ -71,4 +72,21 @@ Replay misses raise an error and never fall back to live calls. API replay requi
 
 ## Scope still deferred
 
-Design-v2 §9 still applies: authentication, holdout epochs/retirement and two-stage candidate selection are not part of this implementation. The structured Blue prompt removes direct forwarding of Red's rationale. Red's live search belongs to Backend 1. Live provider availability, credentials, model compatibility and patch quality must be checked with the chosen provider; automated tests use controlled transports without paid calls.
+Design-v2 §9 still applies: authentication and holdout epochs/retirement are deferred. Live/replay Blue now selects on development data before final-holdout evaluation; fixture/legacy callers retain their existing behavior. The structured Blue prompt removes direct forwarding of Red's rationale. Red's heuristic search belongs to Backend 1; its LLM policy is a separate workstream. Live provider availability, credentials, model compatibility and patch quality must be checked with the chosen provider; automated tests use controlled transports without paid calls.
+
+## Blue's agent loop
+
+Live/replay Blue now uses `run_repair`: it receives Red's bypass, proposes up to three patches, calls deterministic development tools, and feeds their results into its next proposal. It stops on a development-ready patch or after three turns. The 90-second proposal budget is shared across the complete repair loop, including model calls and tool checks.
+
+Development tools see **search and regression only**. A candidate must catch Red's bypass, preserve existing search/regression attack catches, stay within the search false-positive budget, and add no regression false positives. Selection happens on those development checks. The independent evaluation endpoint opens the final holdout only for the selected candidate; its results never enter Blue's revision history. Passing development checks does not authorize activation.
+
+`blue_turns` persists each completed tool-feedback turn and its recording input hash. `/patches` and `/runs/{id}` expose `blue_history`; the UI shows an expandable repair history. Export/replay includes every recorded development turn and recomputes its deterministic tool results. Historical one-shot Blue recordings remain supported.
+
+Fixture mode remains a prepared demonstration, explicitly labeled in the UI. To use Gemini-driven agents on both sides, configure the existing Gemini key/model plus:
+
+```dotenv
+SENTINEL_LLM_MODE=live
+SENTINEL_RED=llm
+```
+
+Red runs its attack-search loop, and Blue runs its repair loop. Stage navigation stays guided and rule activation still requires human approval. Gemini availability/quality has not been checked by the controlled-transport tests.

@@ -32,7 +32,8 @@ export type Bypass = {
   rationale: string;
 };
 // `rules` is the detector version Red attacked (bypass.detector_version), read from the lab.
-export type RedRun = { run_id: string; turns: number; bypass: Bypass | null; rules: Rule[] | null };
+export type RedAttempt = { turn: number; rules_fired: string[]; moved_cents: number };
+export type RedRun = { run_id: string; turns: number; bypass: Bypass | null; rules: Rule[] | null; history?: RedAttempt[] };
 export type Rule = { rule_id: string; all_of: Condition[] };
 export type Condition = {
   feature_key: string;
@@ -49,7 +50,15 @@ export type RulePatch = {
   rationale: string;
 };
 export type PatchResult = { patch: RulePatch; valid: boolean; error: string | null };
-export type PatchRun = { state: string; patches: PatchResult[] };
+export type BlueAgentTurn = {
+  turn: number;
+  selected_patch_id: string | null;
+  feedback: { patch: RulePatch; error: string | null; bypass_caught: boolean; acceptable: boolean;
+    search_before: Record<string, number>; search_after: Record<string, number>;
+    regression_attacks_lost: number; regression_new_false_positives: number }[];
+};
+export type PatchRun = { state: string; patches: PatchResult[]; blue_history?: BlueAgentTurn[] };
+export type AgentModes = { llm: string; red_policy?: string; blue_policy?: string };
 export type Confusion = { tp: number; fp: number; tn: number; fn: number };
 export type GateResult = { name: string; passed: boolean; detail: string; numerator: number; denominator: number; threshold: number };
 export type EvaluationReport = {
@@ -177,7 +186,7 @@ export async function startRedRun(labId: string): Promise<RedRun> {
   const data = await request(`/labs/${labId}/red-runs`, {});
   const bypass: Bypass | null = data.bypass;
   const rules = bypass ? await getRules(labId, bypass.detector_version) : null;
-  return { run_id: data.run_id, turns: data.turns, bypass, rules };
+  return { run_id: data.run_id, turns: data.turns, bypass, rules, history: data.history ?? [] };
 }
 
 export function replayBypass(labId: string, runId: string, rules: ReplayChoice): Promise<BypassReplay> {
@@ -194,7 +203,7 @@ export async function getRechallenge(runId: string): Promise<Rechallenge | null>
 
 export async function proposePatches(labId: string, runId: string, bypassId: string): Promise<PatchRun> {
   const data = await request(`/labs/${labId}/patches`, { run_id: runId, bypass_id: bypassId });
-  return { state: data.state, patches: data.patches };
+  return { state: data.state, patches: data.patches, blue_history: data.blue_history ?? [] };
 }
 
 export function evaluatePatch(labId: string, runId: string, patchId: string): Promise<EvaluationReport> {
@@ -210,4 +219,9 @@ export async function decide(labId: string, reportId: string, decision: Decision
     completion_pending: !!data.completion_pending,
     rechallenge: data.rechallenge ?? null,
   };
+}
+
+
+export function getAgentModes(): Promise<AgentModes> {
+  return request('/healthz', undefined, 'GET');
 }

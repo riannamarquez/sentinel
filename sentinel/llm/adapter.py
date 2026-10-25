@@ -70,11 +70,11 @@ class Adapter:
         self.transport, self.store, self.model = transport, store, model
         self.timeout_seconds, self.clock, self.sleep = timeout_seconds, clock, sleep
 
-    def propose(self, role, prompt_inputs, response_schema: type[BaseModel], *, prompt_version='v1'):
+    def propose(self, role, prompt_inputs, response_schema: type[BaseModel], *, prompt_version='v1', timeout_seconds=None):
         request = proposal_request(role, prompt_inputs, response_schema, prompt_version)
         request['model'] = self.model
         key = sha256_of(request)
-        deadline = self.clock() + self.timeout_seconds
+        deadline = self.clock() + min(self.timeout_seconds, timeout_seconds if timeout_seconds is not None else self.timeout_seconds)
 
         def remaining():
             budget = deadline - self.clock()
@@ -125,7 +125,7 @@ class ReplayAdapter:
     def __init__(self, store: ResponseStore, *, model='configured'):
         self.store, self.model = store, model
 
-    def propose(self, role, prompt_inputs, response_schema, *, prompt_version='v1'):
+    def propose(self, role, prompt_inputs, response_schema, *, prompt_version='v1', timeout_seconds=None):
         request = proposal_request(role, prompt_inputs, response_schema, prompt_version)
         request['model'] = self.model
         rows = self.store.attempts(sha256_of(request))

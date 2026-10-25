@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS runs (
     failure TEXT,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS blue_turns (
+    run_id TEXT NOT NULL REFERENCES runs(run_id),
+    turn INTEGER NOT NULL,
+    json TEXT NOT NULL,
+    PRIMARY KEY (run_id, turn)
+);
 CREATE TABLE IF NOT EXISTS bypasses (
     bypass_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES runs(run_id),
@@ -404,6 +410,7 @@ class Store:
             runs = [dict(r) for r in db.execute('SELECT * FROM runs WHERE lab_id=? ORDER BY run_id', (lab_id,))]
             for run in runs:
                 rid = run['run_id']
+                run['blue_history'] = [json.loads(r['json']) for r in db.execute('SELECT json FROM blue_turns WHERE run_id=? ORDER BY turn', (rid,))]
                 run['bypasses'] = [json.loads(r['json']) for r in db.execute('SELECT json FROM bypasses WHERE run_id=? ORDER BY rowid', (rid,))]
                 run['patches'] = [dict(patch=json.loads(r['json']), error=r['error'], valid=r['error'] is None)
                                   for r in db.execute('SELECT json,error FROM patches WHERE run_id=? ORDER BY rowid', (rid,))]
@@ -457,4 +464,16 @@ class Store:
             patches = [dict(patch=json.loads(r['json']), valid=r['error'] is None, error=r['error'])
                        for r in db.execute("SELECT json,error FROM patches WHERE run_id=? ORDER BY rowid", (run_id,))]
             reports = [json.loads(r['json']) for r in db.execute("SELECT json FROM reports WHERE run_id=? ORDER BY rowid", (run_id,))]
-        return dict(bypasses=bypasses, patches=patches, reports=reports)
+        return dict(bypasses=bypasses, patches=patches, reports=reports, blue_history=self.blue_history(run_id))
+
+
+    def save_blue_turn(self, run_id, record):
+        with self.tx() as db:
+            row = db.execute('SELECT lab_id FROM runs WHERE run_id=?', (run_id,)).fetchone()
+            db.execute('INSERT INTO blue_turns VALUES (?,?,?)', (run_id, record.turn, canonical_json(record)))
+            self.audit(db, lab_id=row['lab_id'], run_id=run_id, actor='system:evaluator',
+                       action='blue:development_test', out=record)
+
+    def blue_history(self, run_id):
+        with self._connect() as db:
+            return [json.loads(r['json']) for r in db.execute('SELECT json FROM blue_turns WHERE run_id=? ORDER BY turn', (run_id,))]

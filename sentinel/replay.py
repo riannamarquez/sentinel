@@ -82,7 +82,18 @@ def verify(bundle):
                 if score(trace.scenario, rules).alert or moved != trace.moved_cents or moved < trace.objective_cents:
                     raise ValueError('Recorded bypass no longer meets its objective')
                 # An unfinished run may not have called Blue yet.
-                if run['patches'] and bundle.get('llm_mode', 'fixture') != 'fixture':
+                if run.get('blue_history') and bundle.get('llm_mode', 'fixture') != 'fixture':
+                    if splits is None:
+                        splits = build_splits(config.seed, config.holdout_benign_n, config.holdout_attack_copies)
+                    repair = blue.run_repair(trace, rules, trace.detector_version, adapter=adapter,
+                        development={split: splits[split] for split in (Split.SEARCH, Split.REGRESSION)},
+                        replay_turn_limit=len(run['blue_history']))
+                    if [h.model_dump(mode='json') for h in repair.history] != run['blue_history']:
+                        raise ValueError('Blue tool feedback replay mismatch')
+                    proposed = [repair.selected] if repair.selected else []
+                    if proposed != [RulePatch.model_validate(p['patch']) for p in run['patches']]:
+                        raise ValueError('Blue replay mismatch for this run')
+                elif run['patches'] and bundle.get('llm_mode', 'fixture') != 'fixture':
                     proposed = blue.propose(trace, rules, trace.detector_version, adapter=adapter)
                     if proposed != [RulePatch.model_validate(p['patch']) for p in run['patches']]:
                         raise ValueError('Blue replay mismatch for this run')

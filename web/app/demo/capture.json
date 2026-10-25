@@ -1,0 +1,1988 @@
+{
+  "approve": {
+    "lab": {
+      "lab_id": "lab-0001",
+      "world": {
+        "customers": 167,
+        "accounts": 200,
+        "transactions": 9691,
+        "edges": 5192
+      },
+      "active_detector_version": 1
+    },
+    "baseline": {
+      "detector_version": 1,
+      "results": [
+        {
+          "scenario_id": "search.fast_ring.0000",
+          "detector_version": 1,
+          "alert": true,
+          "triggered_rule_ids": [
+            "R1"
+          ],
+          "features": {
+            "R1.velocity_out_count": 5.0,
+            "R1.velocity_out_amount": 683205.0
+          },
+          "first_alert_time": 1377360
+        },
+        {
+          "scenario_id": "search.slow_chain_3.0000",
+          "detector_version": 1,
+          "alert": false,
+          "triggered_rule_ids": [],
+          "features": {},
+          "first_alert_time": null
+        },
+        {
+          "scenario_id": "regression.salaried_relay.0000",
+          "detector_version": 1,
+          "alert": false,
+          "triggered_rule_ids": [],
+          "features": {},
+          "first_alert_time": null
+        }
+      ]
+    },
+    "red": {
+      "run_id": "run-000001",
+      "state": "measure_outcome",
+      "turns": 1,
+      "bypass": {
+        "bypass_id": "run-000001.bypass",
+        "detector_version": 1,
+        "scenario": {
+          "scenario_id": "run-000001.red.t1.c0",
+          "template_id": "slow_chain_3",
+          "seed": 11733733373383957476,
+          "split": "search",
+          "malicious_label": true,
+          "start_ts": 255780,
+          "source_account_id": "SRC",
+          "funding_cents": 836406,
+          "opening_balances_cents": {
+            "SRC": 0,
+            "M1": 0,
+            "M2": 0,
+            "M3": 0
+          },
+          "initial_devices": {
+            "SRC": "SRC-d0",
+            "M1": "M1-d0",
+            "M2": "M2-d0",
+            "M3": "M3-d0"
+          },
+          "actions": [
+            {
+              "type": "open_synthetic_account",
+              "timestamp_offset": 0,
+              "source_id": null,
+              "target_id": "M1",
+              "amount_cents": null,
+              "device_id": null
+            },
+            {
+              "type": "open_synthetic_account",
+              "timestamp_offset": 0,
+              "source_id": null,
+              "target_id": "M2",
+              "amount_cents": null,
+              "device_id": null
+            },
+            {
+              "type": "open_synthetic_account",
+              "timestamp_offset": 0,
+              "source_id": null,
+              "target_id": "M3",
+              "amount_cents": null,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 69780,
+              "source_id": "SRC",
+              "target_id": "M1",
+              "amount_cents": 802949,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 54540,
+              "source_id": "M1",
+              "target_id": "M2",
+              "amount_cents": 738713,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 71100,
+              "source_id": "M2",
+              "target_id": "M3",
+              "amount_cents": 723938,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 54660,
+              "source_id": "M3",
+              "target_id": "EXT-cashout",
+              "amount_cents": 702219,
+              "device_id": null
+            }
+          ],
+          "owned_account_ids": [
+            "M1",
+            "M2",
+            "M3",
+            "SRC"
+          ],
+          "transactions": [
+            {
+              "transaction_id": "run-000001.red.t1.c0-00000",
+              "from_id": "EXT-victim",
+              "to_id": "SRC",
+              "amount_cents": 836406,
+              "timestamp": 255780,
+              "device_id": null,
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00001",
+              "from_id": "SRC",
+              "to_id": "M1",
+              "amount_cents": 802949,
+              "timestamp": 325560,
+              "device_id": "SRC-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00002",
+              "from_id": "M1",
+              "to_id": "M2",
+              "amount_cents": 738713,
+              "timestamp": 380100,
+              "device_id": "M1-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00003",
+              "from_id": "M2",
+              "to_id": "M3",
+              "amount_cents": 723938,
+              "timestamp": 451200,
+              "device_id": "M2-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00004",
+              "from_id": "M3",
+              "to_id": "EXT-cashout",
+              "amount_cents": 702219,
+              "timestamp": 505860,
+              "device_id": "M3-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            }
+          ]
+        },
+        "moved_cents": 702219,
+        "objective_cents": 300000,
+        "why_it_worked": [
+          {
+            "rule_id": "R1",
+            "conditions": [
+              {
+                "feature_key": "velocity_out_count",
+                "operator": ">=",
+                "threshold": 5,
+                "closest_value": 1.0,
+                "held": true
+              },
+              {
+                "feature_key": "velocity_out_amount",
+                "operator": ">=",
+                "threshold": 100000,
+                "closest_value": 802949.0,
+                "held": false
+              }
+            ]
+          },
+          {
+            "rule_id": "R2",
+            "conditions": [
+              {
+                "feature_key": "pass_through_ratio",
+                "operator": ">=",
+                "threshold": 0.9,
+                "closest_value": 0.0,
+                "held": true
+              },
+              {
+                "feature_key": "velocity_in_amount",
+                "operator": ">=",
+                "threshold": 500000,
+                "closest_value": 0.0,
+                "held": true
+              }
+            ]
+          },
+          {
+            "rule_id": "R3",
+            "conditions": [
+              {
+                "feature_key": "new_device_before_transfer",
+                "operator": ">=",
+                "threshold": 1,
+                "closest_value": 0.0,
+                "held": true
+              },
+              {
+                "feature_key": "transfer_amount",
+                "operator": ">=",
+                "threshold": 100000,
+                "closest_value": 802949.0,
+                "held": false
+              }
+            ]
+          }
+        ],
+        "rationale": "Pass the money through three fresh mule accounts, holding each hop 7-20 hours: longer than R2's 6-hour pass-through window, and one transfer at a time so R1's velocity count never reaches 5. No new devices, so R3 never fires."
+      },
+      "history": []
+    },
+    "patch": {
+      "patch_id": "golden-hop-count",
+      "base_version": 1,
+      "operation": "add",
+      "rule_id": null,
+      "all_of": [
+        {
+          "feature_key": "short_hold_hop_count",
+          "operator": ">=",
+          "threshold": 4,
+          "window_hours": 72,
+          "params": {
+            "hold_hours": 24,
+            "min_carry_pct": 40
+          }
+        }
+      ],
+      "rationale": "The bypass moved the stolen amount through 4+ consecutive transfers, each sent within 24 hours of the previous one arriving and forwarding most of it. Flag outgoing transfers at the end of such a chain."
+    },
+    "report": {
+      "report_id": "rep-000001",
+      "run_id": "run-000001",
+      "patch_id": "golden-hop-count",
+      "baseline_version": 1,
+      "candidate_version": 2,
+      "candidate_rules_hash": "69ae8cc6bf567d3f0bf11264937cf4a04561d26042e45324b0cc399acb1d1244",
+      "benign_n": 500,
+      "attack_n": 48,
+      "dataset_hashes": {
+        "search": "87fd4fc7de641df67d33d14406b2d48fb20a485d4565dd074cc1c42b3ec0c5d7",
+        "regression": "9a7dc7f8ddfd1c91e75b68e1040ad073dec3b55ff22e574cb83d2b2d34d061c8",
+        "final_holdout": "6bd7b2469000e446068bdf6fc4040a809bab8ed84f04d023d4076a0948dec8b9"
+      },
+      "baseline_confusion": {
+        "search": {
+          "tp": 4,
+          "fp": 2,
+          "tn": 48,
+          "fn": 4
+        },
+        "regression": {
+          "tp": 8,
+          "fp": 0,
+          "tn": 20,
+          "fn": 0
+        },
+        "final_holdout": {
+          "tp": 8,
+          "fp": 49,
+          "tn": 451,
+          "fn": 40
+        }
+      },
+      "candidate_confusion": {
+        "search": {
+          "tp": 8,
+          "fp": 2,
+          "tn": 48,
+          "fn": 0
+        },
+        "regression": {
+          "tp": 8,
+          "fp": 0,
+          "tn": 20,
+          "fn": 0
+        },
+        "final_holdout": {
+          "tp": 32,
+          "fp": 49,
+          "tn": 451,
+          "fn": 16
+        }
+      },
+      "recall_before": 0.16666666666666666,
+      "recall_after": 0.6666666666666666,
+      "fpr_before": 0.098,
+      "fpr_after": 0.098,
+      "regression_pass": true,
+      "holdout_pass": true,
+      "gate_pass": true,
+      "gate_results": [
+        {
+          "name": "schema_valid",
+          "split": null,
+          "numerator": 1,
+          "denominator": 1,
+          "threshold": 1,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "fpr_budget",
+          "split": "final_holdout",
+          "numerator": 0,
+          "denominator": 500,
+          "threshold": 2,
+          "passed": true,
+          "detail": "+0 false positives, budget 2 (0.5 pp)"
+        },
+        {
+          "name": "regression_no_loss",
+          "split": "regression",
+          "numerator": 8,
+          "denominator": 8,
+          "threshold": 8,
+          "passed": true,
+          "detail": "8/8 previously caught attacks still caught"
+        },
+        {
+          "name": "regression_benign",
+          "split": "regression",
+          "numerator": 0,
+          "denominator": 20,
+          "threshold": 0,
+          "passed": true,
+          "detail": "lookalikes flagged 0 -> 0"
+        },
+        {
+          "name": "holdout_recall_gain",
+          "split": "final_holdout",
+          "numerator": 24,
+          "denominator": 48,
+          "threshold": 1,
+          "passed": true,
+          "detail": "8 -> 32 of 48 caught"
+        }
+      ],
+      "eligible_for_approval": true,
+      "missed_breakdown": [
+        {
+          "reason": "long_hold",
+          "label": "Held money longer than 24 hours",
+          "count": 8
+        },
+        {
+          "reason": "short_chain",
+          "label": "Chain too short (under 4 hops)",
+          "count": 8
+        }
+      ]
+    },
+    "approval": {
+      "decision": "approve",
+      "version_created": 2,
+      "event_id": "evt-00000014",
+      "active_version": 2,
+      "run_id": "run-000001",
+      "completion_pending": false,
+      "rechallenge": {
+        "scenario_id": "final_holdout.slow_chain_3.10001",
+        "detector_version": 2,
+        "alert": true,
+        "triggered_rule_ids": [
+          "R4"
+        ],
+        "features": {
+          "R4.short_hold_hop_count": 4.0
+        },
+        "first_alert_time": 1490100
+      }
+    },
+    "run": {
+      "run_id": "run-000001",
+      "lab_id": "lab-0001",
+      "state": "complete",
+      "base_version": 1,
+      "turns": 1,
+      "failure": null,
+      "created_at": 1792907036,
+      "bypasses": [
+        {
+          "bypass_id": "run-000001.bypass",
+          "detector_version": 1,
+          "moved_cents": 702219,
+          "objective_cents": 300000,
+          "rationale": "Pass the money through three fresh mule accounts, holding each hop 7-20 hours: longer than R2's 6-hour pass-through window, and one transfer at a time so R1's velocity count never reaches 5. No new devices, so R3 never fires.",
+          "scenario": {
+            "actions": [
+              {
+                "amount_cents": null,
+                "device_id": null,
+                "source_id": null,
+                "target_id": "M1",
+                "timestamp_offset": 0,
+                "type": "open_synthetic_account"
+              },
+              {
+                "amount_cents": null,
+                "device_id": null,
+                "source_id": null,
+                "target_id": "M2",
+                "timestamp_offset": 0,
+                "type": "open_synthetic_account"
+              },
+              {
+                "amount_cents": null,
+                "device_id": null,
+                "source_id": null,
+                "target_id": "M3",
+                "timestamp_offset": 0,
+                "type": "open_synthetic_account"
+              },
+              {
+                "amount_cents": 802949,
+                "device_id": null,
+                "source_id": "SRC",
+                "target_id": "M1",
+                "timestamp_offset": 69780,
+                "type": "simulated_transfer"
+              },
+              {
+                "amount_cents": 738713,
+                "device_id": null,
+                "source_id": "M1",
+                "target_id": "M2",
+                "timestamp_offset": 54540,
+                "type": "simulated_transfer"
+              },
+              {
+                "amount_cents": 723938,
+                "device_id": null,
+                "source_id": "M2",
+                "target_id": "M3",
+                "timestamp_offset": 71100,
+                "type": "simulated_transfer"
+              },
+              {
+                "amount_cents": 702219,
+                "device_id": null,
+                "source_id": "M3",
+                "target_id": "EXT-cashout",
+                "timestamp_offset": 54660,
+                "type": "simulated_transfer"
+              }
+            ],
+            "funding_cents": 836406,
+            "initial_devices": {
+              "M1": "M1-d0",
+              "M2": "M2-d0",
+              "M3": "M3-d0",
+              "SRC": "SRC-d0"
+            },
+            "malicious_label": true,
+            "opening_balances_cents": {
+              "M1": 0,
+              "M2": 0,
+              "M3": 0,
+              "SRC": 0
+            },
+            "owned_account_ids": [
+              "M1",
+              "M2",
+              "M3",
+              "SRC"
+            ],
+            "scenario_id": "run-000001.red.t1.c0",
+            "seed": 11733733373383957476,
+            "source_account_id": "SRC",
+            "split": "search",
+            "start_ts": 255780,
+            "template_id": "slow_chain_3",
+            "transactions": [
+              {
+                "amount_cents": 836406,
+                "device_id": null,
+                "from_id": "EXT-victim",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 255780,
+                "to_id": "SRC",
+                "transaction_id": "run-000001.red.t1.c0-00000"
+              },
+              {
+                "amount_cents": 802949,
+                "device_id": "SRC-d0",
+                "from_id": "SRC",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 325560,
+                "to_id": "M1",
+                "transaction_id": "run-000001.red.t1.c0-00001"
+              },
+              {
+                "amount_cents": 738713,
+                "device_id": "M1-d0",
+                "from_id": "M1",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 380100,
+                "to_id": "M2",
+                "transaction_id": "run-000001.red.t1.c0-00002"
+              },
+              {
+                "amount_cents": 723938,
+                "device_id": "M2-d0",
+                "from_id": "M2",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 451200,
+                "to_id": "M3",
+                "transaction_id": "run-000001.red.t1.c0-00003"
+              },
+              {
+                "amount_cents": 702219,
+                "device_id": "M3-d0",
+                "from_id": "M3",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 505860,
+                "to_id": "EXT-cashout",
+                "transaction_id": "run-000001.red.t1.c0-00004"
+              }
+            ]
+          },
+          "why_it_worked": [
+            {
+              "conditions": [
+                {
+                  "closest_value": 1.0,
+                  "feature_key": "velocity_out_count",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 5
+                },
+                {
+                  "closest_value": 802949.0,
+                  "feature_key": "velocity_out_amount",
+                  "held": false,
+                  "operator": ">=",
+                  "threshold": 100000
+                }
+              ],
+              "rule_id": "R1"
+            },
+            {
+              "conditions": [
+                {
+                  "closest_value": 0.0,
+                  "feature_key": "pass_through_ratio",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 0.9
+                },
+                {
+                  "closest_value": 0.0,
+                  "feature_key": "velocity_in_amount",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 500000
+                }
+              ],
+              "rule_id": "R2"
+            },
+            {
+              "conditions": [
+                {
+                  "closest_value": 0.0,
+                  "feature_key": "new_device_before_transfer",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 1
+                },
+                {
+                  "closest_value": 802949.0,
+                  "feature_key": "transfer_amount",
+                  "held": false,
+                  "operator": ">=",
+                  "threshold": 100000
+                }
+              ],
+              "rule_id": "R3"
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "patch": {
+            "all_of": [
+              {
+                "feature_key": "short_hold_hop_count",
+                "operator": ">=",
+                "params": {
+                  "hold_hours": 24,
+                  "min_carry_pct": 40
+                },
+                "threshold": 4,
+                "window_hours": 72
+              }
+            ],
+            "base_version": 1,
+            "operation": "add",
+            "patch_id": "golden-hop-count",
+            "rationale": "The bypass moved the stolen amount through 4+ consecutive transfers, each sent within 24 hours of the previous one arriving and forwarding most of it. Flag outgoing transfers at the end of such a chain.",
+            "rule_id": null
+          },
+          "valid": true,
+          "error": null
+        }
+      ],
+      "reports": [
+        {
+          "attack_n": 48,
+          "baseline_confusion": {
+            "final_holdout": {
+              "fn": 40,
+              "fp": 49,
+              "tn": 451,
+              "tp": 8
+            },
+            "regression": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 20,
+              "tp": 8
+            },
+            "search": {
+              "fn": 4,
+              "fp": 2,
+              "tn": 48,
+              "tp": 4
+            }
+          },
+          "baseline_version": 1,
+          "benign_n": 500,
+          "candidate_confusion": {
+            "final_holdout": {
+              "fn": 16,
+              "fp": 49,
+              "tn": 451,
+              "tp": 32
+            },
+            "regression": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 20,
+              "tp": 8
+            },
+            "search": {
+              "fn": 0,
+              "fp": 2,
+              "tn": 48,
+              "tp": 8
+            }
+          },
+          "candidate_rules_hash": "69ae8cc6bf567d3f0bf11264937cf4a04561d26042e45324b0cc399acb1d1244",
+          "candidate_version": 2,
+          "dataset_hashes": {
+            "final_holdout": "6bd7b2469000e446068bdf6fc4040a809bab8ed84f04d023d4076a0948dec8b9",
+            "regression": "9a7dc7f8ddfd1c91e75b68e1040ad073dec3b55ff22e574cb83d2b2d34d061c8",
+            "search": "87fd4fc7de641df67d33d14406b2d48fb20a485d4565dd074cc1c42b3ec0c5d7"
+          },
+          "eligible_for_approval": true,
+          "fpr_after": 0.098,
+          "fpr_before": 0.098,
+          "gate_pass": true,
+          "gate_results": [
+            {
+              "denominator": 1,
+              "detail": "",
+              "name": "schema_valid",
+              "numerator": 1,
+              "passed": true,
+              "split": null,
+              "threshold": 1
+            },
+            {
+              "denominator": 500,
+              "detail": "+0 false positives, budget 2 (0.5 pp)",
+              "name": "fpr_budget",
+              "numerator": 0,
+              "passed": true,
+              "split": "final_holdout",
+              "threshold": 2
+            },
+            {
+              "denominator": 8,
+              "detail": "8/8 previously caught attacks still caught",
+              "name": "regression_no_loss",
+              "numerator": 8,
+              "passed": true,
+              "split": "regression",
+              "threshold": 8
+            },
+            {
+              "denominator": 20,
+              "detail": "lookalikes flagged 0 -> 0",
+              "name": "regression_benign",
+              "numerator": 0,
+              "passed": true,
+              "split": "regression",
+              "threshold": 0
+            },
+            {
+              "denominator": 48,
+              "detail": "8 -> 32 of 48 caught",
+              "name": "holdout_recall_gain",
+              "numerator": 24,
+              "passed": true,
+              "split": "final_holdout",
+              "threshold": 1
+            }
+          ],
+          "holdout_pass": true,
+          "missed_breakdown": [
+            {
+              "count": 8,
+              "label": "Held money longer than 24 hours",
+              "reason": "long_hold"
+            },
+            {
+              "count": 8,
+              "label": "Chain too short (under 4 hops)",
+              "reason": "short_chain"
+            }
+          ],
+          "patch_id": "golden-hop-count",
+          "recall_after": 0.6666666666666666,
+          "recall_before": 0.16666666666666666,
+          "regression_pass": true,
+          "report_id": "rep-000001",
+          "run_id": "run-000001"
+        }
+      ],
+      "events": [
+        {
+          "event_id": "evt-00000002",
+          "seq": 2,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:initialize_lab",
+          "input_hash": null,
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000003",
+          "seq": 3,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:generate_world",
+          "input_hash": null,
+          "output_hash": "bc69aa91d89a513826ede93cc63fd592aabf8be7c806b521f96f17c59dfcd2b5",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000004",
+          "seq": 4,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:baseline_score",
+          "input_hash": null,
+          "output_hash": "ba558373304960b04860df753167a3944a3387a33f75295f0cac2507d0440a72",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000005",
+          "seq": 5,
+          "timestamp": 1792907036,
+          "actor": "agent:red",
+          "run_id": "run-000001",
+          "action": "enter:red_proposes",
+          "input_hash": null,
+          "output_hash": "dd32519890203627c0aa4ba2108a2d0126008e0804ddb9cd9950167454dec13b",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000006",
+          "seq": 6,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:validate_actions",
+          "input_hash": null,
+          "output_hash": "cb325527bdb0fb84da18c91aeb41b075c1cf2e5eef32ce901eb91a925ab5c7c7",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000007",
+          "seq": 7,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:run_simulation",
+          "input_hash": null,
+          "output_hash": "025e5b49a2183c8ebf1fc2b25e9348c21ba4a571a6f805eb152a33e927c06a2c",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000008",
+          "seq": 8,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:measure_outcome",
+          "input_hash": null,
+          "output_hash": "33e0922456db0b6b9cb66ca336fa403540fb961e6e6cc6770c799c687d1c472f",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000009",
+          "seq": 9,
+          "timestamp": 1792907036,
+          "actor": "agent:blue",
+          "run_id": "run-000001",
+          "action": "enter:blue_proposes",
+          "input_hash": "3b2058c232a48b33cc1a50d632ec155c6ae6e4795fa978ef2b53e5410c4c500f",
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000010",
+          "seq": 10,
+          "timestamp": 1792907036,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:validate_patch",
+          "input_hash": null,
+          "output_hash": "62685e722ef669247aef4182d3951eb31e1b944d7c4be58ab83b99613b2eba11",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000011",
+          "seq": 11,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:evaluate_holdouts",
+          "input_hash": "e164170f751ab9774f998309b27f2d061fcc940b8a2431798e9e4467efb07eb0",
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000012",
+          "seq": 12,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:apply_gates",
+          "input_hash": null,
+          "output_hash": "9289ba6fe647b915c7f770c93daad079d5c6e1c40a9ccec09fc757bd86ed6dfb",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000013",
+          "seq": 13,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:await_human",
+          "input_hash": null,
+          "output_hash": "2f2bf653eb09fe0d2b2595559e326fa79e470b42099d87d71e29f4074270e2ec",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000014",
+          "seq": 14,
+          "timestamp": 1792907037,
+          "actor": "human",
+          "run_id": "run-000001",
+          "action": "approve",
+          "input_hash": "2b870684695fa79dfd925ef305b0b824de23b5ffb3b25a5f5be92ccb05ee0b9c",
+          "output_hash": "69ae8cc6bf567d3f0bf11264937cf4a04561d26042e45324b0cc399acb1d1244",
+          "version_before": 1,
+          "version_after": 2
+        },
+        {
+          "event_id": "evt-00000015",
+          "seq": 15,
+          "timestamp": 1792907037,
+          "actor": "human",
+          "run_id": "run-000001",
+          "action": "enter:apply_new_version",
+          "input_hash": null,
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": 2
+        },
+        {
+          "event_id": "evt-00000016",
+          "seq": 16,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:rechallenge",
+          "input_hash": null,
+          "output_hash": "213910ee615afcf27385480aea9d31e27034c47e3fd956ccbd4276fd4a14f48e",
+          "version_before": 2,
+          "version_after": 2
+        },
+        {
+          "event_id": "evt-00000017",
+          "seq": 17,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:complete",
+          "input_hash": null,
+          "output_hash": null,
+          "version_before": 2,
+          "version_after": 2
+        }
+      ],
+      "rechallenge": {
+        "scenario_id": "final_holdout.slow_chain_3.10001",
+        "detector_version": 2,
+        "alert": true,
+        "triggered_rule_ids": [
+          "R4"
+        ],
+        "features": {
+          "R4.short_hold_hop_count": 4.0
+        },
+        "first_alert_time": 1490100
+      }
+    }
+  },
+  "reject": {
+    "lab": {
+      "lab_id": "lab-0001",
+      "world": {
+        "customers": 167,
+        "accounts": 200,
+        "transactions": 9691,
+        "edges": 5192
+      },
+      "active_detector_version": 1
+    },
+    "baseline": {
+      "detector_version": 1,
+      "results": [
+        {
+          "scenario_id": "search.fast_ring.0000",
+          "detector_version": 1,
+          "alert": true,
+          "triggered_rule_ids": [
+            "R1"
+          ],
+          "features": {
+            "R1.velocity_out_count": 5.0,
+            "R1.velocity_out_amount": 683205.0
+          },
+          "first_alert_time": 1377360
+        },
+        {
+          "scenario_id": "search.slow_chain_3.0000",
+          "detector_version": 1,
+          "alert": false,
+          "triggered_rule_ids": [],
+          "features": {},
+          "first_alert_time": null
+        },
+        {
+          "scenario_id": "regression.salaried_relay.0000",
+          "detector_version": 1,
+          "alert": false,
+          "triggered_rule_ids": [],
+          "features": {},
+          "first_alert_time": null
+        }
+      ]
+    },
+    "red": {
+      "run_id": "run-000001",
+      "state": "measure_outcome",
+      "turns": 1,
+      "bypass": {
+        "bypass_id": "run-000001.bypass",
+        "detector_version": 1,
+        "scenario": {
+          "scenario_id": "run-000001.red.t1.c0",
+          "template_id": "slow_chain_3",
+          "seed": 11733733373383957476,
+          "split": "search",
+          "malicious_label": true,
+          "start_ts": 255780,
+          "source_account_id": "SRC",
+          "funding_cents": 836406,
+          "opening_balances_cents": {
+            "SRC": 0,
+            "M1": 0,
+            "M2": 0,
+            "M3": 0
+          },
+          "initial_devices": {
+            "SRC": "SRC-d0",
+            "M1": "M1-d0",
+            "M2": "M2-d0",
+            "M3": "M3-d0"
+          },
+          "actions": [
+            {
+              "type": "open_synthetic_account",
+              "timestamp_offset": 0,
+              "source_id": null,
+              "target_id": "M1",
+              "amount_cents": null,
+              "device_id": null
+            },
+            {
+              "type": "open_synthetic_account",
+              "timestamp_offset": 0,
+              "source_id": null,
+              "target_id": "M2",
+              "amount_cents": null,
+              "device_id": null
+            },
+            {
+              "type": "open_synthetic_account",
+              "timestamp_offset": 0,
+              "source_id": null,
+              "target_id": "M3",
+              "amount_cents": null,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 69780,
+              "source_id": "SRC",
+              "target_id": "M1",
+              "amount_cents": 802949,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 54540,
+              "source_id": "M1",
+              "target_id": "M2",
+              "amount_cents": 738713,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 71100,
+              "source_id": "M2",
+              "target_id": "M3",
+              "amount_cents": 723938,
+              "device_id": null
+            },
+            {
+              "type": "simulated_transfer",
+              "timestamp_offset": 54660,
+              "source_id": "M3",
+              "target_id": "EXT-cashout",
+              "amount_cents": 702219,
+              "device_id": null
+            }
+          ],
+          "owned_account_ids": [
+            "M1",
+            "M2",
+            "M3",
+            "SRC"
+          ],
+          "transactions": [
+            {
+              "transaction_id": "run-000001.red.t1.c0-00000",
+              "from_id": "EXT-victim",
+              "to_id": "SRC",
+              "amount_cents": 836406,
+              "timestamp": 255780,
+              "device_id": null,
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00001",
+              "from_id": "SRC",
+              "to_id": "M1",
+              "amount_cents": 802949,
+              "timestamp": 325560,
+              "device_id": "SRC-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00002",
+              "from_id": "M1",
+              "to_id": "M2",
+              "amount_cents": 738713,
+              "timestamp": 380100,
+              "device_id": "M1-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00003",
+              "from_id": "M2",
+              "to_id": "M3",
+              "amount_cents": 723938,
+              "timestamp": 451200,
+              "device_id": "M2-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            },
+            {
+              "transaction_id": "run-000001.red.t1.c0-00004",
+              "from_id": "M3",
+              "to_id": "EXT-cashout",
+              "amount_cents": 702219,
+              "timestamp": 505860,
+              "device_id": "M3-d0",
+              "merchant_category": null,
+              "scenario_id": "run-000001.red.t1.c0",
+              "ground_truth_label": "malicious"
+            }
+          ]
+        },
+        "moved_cents": 702219,
+        "objective_cents": 300000,
+        "why_it_worked": [
+          {
+            "rule_id": "R1",
+            "conditions": [
+              {
+                "feature_key": "velocity_out_count",
+                "operator": ">=",
+                "threshold": 5,
+                "closest_value": 1.0,
+                "held": true
+              },
+              {
+                "feature_key": "velocity_out_amount",
+                "operator": ">=",
+                "threshold": 100000,
+                "closest_value": 802949.0,
+                "held": false
+              }
+            ]
+          },
+          {
+            "rule_id": "R2",
+            "conditions": [
+              {
+                "feature_key": "pass_through_ratio",
+                "operator": ">=",
+                "threshold": 0.9,
+                "closest_value": 0.0,
+                "held": true
+              },
+              {
+                "feature_key": "velocity_in_amount",
+                "operator": ">=",
+                "threshold": 500000,
+                "closest_value": 0.0,
+                "held": true
+              }
+            ]
+          },
+          {
+            "rule_id": "R3",
+            "conditions": [
+              {
+                "feature_key": "new_device_before_transfer",
+                "operator": ">=",
+                "threshold": 1,
+                "closest_value": 0.0,
+                "held": true
+              },
+              {
+                "feature_key": "transfer_amount",
+                "operator": ">=",
+                "threshold": 100000,
+                "closest_value": 802949.0,
+                "held": false
+              }
+            ]
+          }
+        ],
+        "rationale": "Pass the money through three fresh mule accounts, holding each hop 7-20 hours: longer than R2's 6-hour pass-through window, and one transfer at a time so R1's velocity count never reaches 5. No new devices, so R3 never fires."
+      },
+      "history": []
+    },
+    "patch": {
+      "patch_id": "golden-hop-count",
+      "base_version": 1,
+      "operation": "add",
+      "rule_id": null,
+      "all_of": [
+        {
+          "feature_key": "short_hold_hop_count",
+          "operator": ">=",
+          "threshold": 4,
+          "window_hours": 72,
+          "params": {
+            "hold_hours": 24,
+            "min_carry_pct": 40
+          }
+        }
+      ],
+      "rationale": "The bypass moved the stolen amount through 4+ consecutive transfers, each sent within 24 hours of the previous one arriving and forwarding most of it. Flag outgoing transfers at the end of such a chain."
+    },
+    "report": {
+      "report_id": "rep-000001",
+      "run_id": "run-000001",
+      "patch_id": "golden-hop-count",
+      "baseline_version": 1,
+      "candidate_version": 2,
+      "candidate_rules_hash": "69ae8cc6bf567d3f0bf11264937cf4a04561d26042e45324b0cc399acb1d1244",
+      "benign_n": 500,
+      "attack_n": 48,
+      "dataset_hashes": {
+        "search": "87fd4fc7de641df67d33d14406b2d48fb20a485d4565dd074cc1c42b3ec0c5d7",
+        "regression": "9a7dc7f8ddfd1c91e75b68e1040ad073dec3b55ff22e574cb83d2b2d34d061c8",
+        "final_holdout": "6bd7b2469000e446068bdf6fc4040a809bab8ed84f04d023d4076a0948dec8b9"
+      },
+      "baseline_confusion": {
+        "search": {
+          "tp": 4,
+          "fp": 2,
+          "tn": 48,
+          "fn": 4
+        },
+        "regression": {
+          "tp": 8,
+          "fp": 0,
+          "tn": 20,
+          "fn": 0
+        },
+        "final_holdout": {
+          "tp": 8,
+          "fp": 49,
+          "tn": 451,
+          "fn": 40
+        }
+      },
+      "candidate_confusion": {
+        "search": {
+          "tp": 8,
+          "fp": 2,
+          "tn": 48,
+          "fn": 0
+        },
+        "regression": {
+          "tp": 8,
+          "fp": 0,
+          "tn": 20,
+          "fn": 0
+        },
+        "final_holdout": {
+          "tp": 32,
+          "fp": 49,
+          "tn": 451,
+          "fn": 16
+        }
+      },
+      "recall_before": 0.16666666666666666,
+      "recall_after": 0.6666666666666666,
+      "fpr_before": 0.098,
+      "fpr_after": 0.098,
+      "regression_pass": true,
+      "holdout_pass": true,
+      "gate_pass": true,
+      "gate_results": [
+        {
+          "name": "schema_valid",
+          "split": null,
+          "numerator": 1,
+          "denominator": 1,
+          "threshold": 1,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "fpr_budget",
+          "split": "final_holdout",
+          "numerator": 0,
+          "denominator": 500,
+          "threshold": 2,
+          "passed": true,
+          "detail": "+0 false positives, budget 2 (0.5 pp)"
+        },
+        {
+          "name": "regression_no_loss",
+          "split": "regression",
+          "numerator": 8,
+          "denominator": 8,
+          "threshold": 8,
+          "passed": true,
+          "detail": "8/8 previously caught attacks still caught"
+        },
+        {
+          "name": "regression_benign",
+          "split": "regression",
+          "numerator": 0,
+          "denominator": 20,
+          "threshold": 0,
+          "passed": true,
+          "detail": "lookalikes flagged 0 -> 0"
+        },
+        {
+          "name": "holdout_recall_gain",
+          "split": "final_holdout",
+          "numerator": 24,
+          "denominator": 48,
+          "threshold": 1,
+          "passed": true,
+          "detail": "8 -> 32 of 48 caught"
+        }
+      ],
+      "eligible_for_approval": true,
+      "missed_breakdown": [
+        {
+          "reason": "long_hold",
+          "label": "Held money longer than 24 hours",
+          "count": 8
+        },
+        {
+          "reason": "short_chain",
+          "label": "Chain too short (under 4 hops)",
+          "count": 8
+        }
+      ]
+    },
+    "approval": {
+      "decision": "reject",
+      "version_created": null,
+      "event_id": "evt-00000014",
+      "active_version": 1,
+      "run_id": "run-000001",
+      "completion_pending": false,
+      "rechallenge": {
+        "scenario_id": "final_holdout.slow_chain_3.10001",
+        "detector_version": 1,
+        "alert": false,
+        "triggered_rule_ids": [],
+        "features": {},
+        "first_alert_time": null
+      }
+    },
+    "run": {
+      "run_id": "run-000001",
+      "lab_id": "lab-0001",
+      "state": "complete",
+      "base_version": 1,
+      "turns": 1,
+      "failure": null,
+      "created_at": 1792907037,
+      "bypasses": [
+        {
+          "bypass_id": "run-000001.bypass",
+          "detector_version": 1,
+          "moved_cents": 702219,
+          "objective_cents": 300000,
+          "rationale": "Pass the money through three fresh mule accounts, holding each hop 7-20 hours: longer than R2's 6-hour pass-through window, and one transfer at a time so R1's velocity count never reaches 5. No new devices, so R3 never fires.",
+          "scenario": {
+            "actions": [
+              {
+                "amount_cents": null,
+                "device_id": null,
+                "source_id": null,
+                "target_id": "M1",
+                "timestamp_offset": 0,
+                "type": "open_synthetic_account"
+              },
+              {
+                "amount_cents": null,
+                "device_id": null,
+                "source_id": null,
+                "target_id": "M2",
+                "timestamp_offset": 0,
+                "type": "open_synthetic_account"
+              },
+              {
+                "amount_cents": null,
+                "device_id": null,
+                "source_id": null,
+                "target_id": "M3",
+                "timestamp_offset": 0,
+                "type": "open_synthetic_account"
+              },
+              {
+                "amount_cents": 802949,
+                "device_id": null,
+                "source_id": "SRC",
+                "target_id": "M1",
+                "timestamp_offset": 69780,
+                "type": "simulated_transfer"
+              },
+              {
+                "amount_cents": 738713,
+                "device_id": null,
+                "source_id": "M1",
+                "target_id": "M2",
+                "timestamp_offset": 54540,
+                "type": "simulated_transfer"
+              },
+              {
+                "amount_cents": 723938,
+                "device_id": null,
+                "source_id": "M2",
+                "target_id": "M3",
+                "timestamp_offset": 71100,
+                "type": "simulated_transfer"
+              },
+              {
+                "amount_cents": 702219,
+                "device_id": null,
+                "source_id": "M3",
+                "target_id": "EXT-cashout",
+                "timestamp_offset": 54660,
+                "type": "simulated_transfer"
+              }
+            ],
+            "funding_cents": 836406,
+            "initial_devices": {
+              "M1": "M1-d0",
+              "M2": "M2-d0",
+              "M3": "M3-d0",
+              "SRC": "SRC-d0"
+            },
+            "malicious_label": true,
+            "opening_balances_cents": {
+              "M1": 0,
+              "M2": 0,
+              "M3": 0,
+              "SRC": 0
+            },
+            "owned_account_ids": [
+              "M1",
+              "M2",
+              "M3",
+              "SRC"
+            ],
+            "scenario_id": "run-000001.red.t1.c0",
+            "seed": 11733733373383957476,
+            "source_account_id": "SRC",
+            "split": "search",
+            "start_ts": 255780,
+            "template_id": "slow_chain_3",
+            "transactions": [
+              {
+                "amount_cents": 836406,
+                "device_id": null,
+                "from_id": "EXT-victim",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 255780,
+                "to_id": "SRC",
+                "transaction_id": "run-000001.red.t1.c0-00000"
+              },
+              {
+                "amount_cents": 802949,
+                "device_id": "SRC-d0",
+                "from_id": "SRC",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 325560,
+                "to_id": "M1",
+                "transaction_id": "run-000001.red.t1.c0-00001"
+              },
+              {
+                "amount_cents": 738713,
+                "device_id": "M1-d0",
+                "from_id": "M1",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 380100,
+                "to_id": "M2",
+                "transaction_id": "run-000001.red.t1.c0-00002"
+              },
+              {
+                "amount_cents": 723938,
+                "device_id": "M2-d0",
+                "from_id": "M2",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 451200,
+                "to_id": "M3",
+                "transaction_id": "run-000001.red.t1.c0-00003"
+              },
+              {
+                "amount_cents": 702219,
+                "device_id": "M3-d0",
+                "from_id": "M3",
+                "ground_truth_label": "malicious",
+                "merchant_category": null,
+                "scenario_id": "run-000001.red.t1.c0",
+                "timestamp": 505860,
+                "to_id": "EXT-cashout",
+                "transaction_id": "run-000001.red.t1.c0-00004"
+              }
+            ]
+          },
+          "why_it_worked": [
+            {
+              "conditions": [
+                {
+                  "closest_value": 1.0,
+                  "feature_key": "velocity_out_count",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 5
+                },
+                {
+                  "closest_value": 802949.0,
+                  "feature_key": "velocity_out_amount",
+                  "held": false,
+                  "operator": ">=",
+                  "threshold": 100000
+                }
+              ],
+              "rule_id": "R1"
+            },
+            {
+              "conditions": [
+                {
+                  "closest_value": 0.0,
+                  "feature_key": "pass_through_ratio",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 0.9
+                },
+                {
+                  "closest_value": 0.0,
+                  "feature_key": "velocity_in_amount",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 500000
+                }
+              ],
+              "rule_id": "R2"
+            },
+            {
+              "conditions": [
+                {
+                  "closest_value": 0.0,
+                  "feature_key": "new_device_before_transfer",
+                  "held": true,
+                  "operator": ">=",
+                  "threshold": 1
+                },
+                {
+                  "closest_value": 802949.0,
+                  "feature_key": "transfer_amount",
+                  "held": false,
+                  "operator": ">=",
+                  "threshold": 100000
+                }
+              ],
+              "rule_id": "R3"
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "patch": {
+            "all_of": [
+              {
+                "feature_key": "short_hold_hop_count",
+                "operator": ">=",
+                "params": {
+                  "hold_hours": 24,
+                  "min_carry_pct": 40
+                },
+                "threshold": 4,
+                "window_hours": 72
+              }
+            ],
+            "base_version": 1,
+            "operation": "add",
+            "patch_id": "golden-hop-count",
+            "rationale": "The bypass moved the stolen amount through 4+ consecutive transfers, each sent within 24 hours of the previous one arriving and forwarding most of it. Flag outgoing transfers at the end of such a chain.",
+            "rule_id": null
+          },
+          "valid": true,
+          "error": null
+        }
+      ],
+      "reports": [
+        {
+          "attack_n": 48,
+          "baseline_confusion": {
+            "final_holdout": {
+              "fn": 40,
+              "fp": 49,
+              "tn": 451,
+              "tp": 8
+            },
+            "regression": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 20,
+              "tp": 8
+            },
+            "search": {
+              "fn": 4,
+              "fp": 2,
+              "tn": 48,
+              "tp": 4
+            }
+          },
+          "baseline_version": 1,
+          "benign_n": 500,
+          "candidate_confusion": {
+            "final_holdout": {
+              "fn": 16,
+              "fp": 49,
+              "tn": 451,
+              "tp": 32
+            },
+            "regression": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 20,
+              "tp": 8
+            },
+            "search": {
+              "fn": 0,
+              "fp": 2,
+              "tn": 48,
+              "tp": 8
+            }
+          },
+          "candidate_rules_hash": "69ae8cc6bf567d3f0bf11264937cf4a04561d26042e45324b0cc399acb1d1244",
+          "candidate_version": 2,
+          "dataset_hashes": {
+            "final_holdout": "6bd7b2469000e446068bdf6fc4040a809bab8ed84f04d023d4076a0948dec8b9",
+            "regression": "9a7dc7f8ddfd1c91e75b68e1040ad073dec3b55ff22e574cb83d2b2d34d061c8",
+            "search": "87fd4fc7de641df67d33d14406b2d48fb20a485d4565dd074cc1c42b3ec0c5d7"
+          },
+          "eligible_for_approval": true,
+          "fpr_after": 0.098,
+          "fpr_before": 0.098,
+          "gate_pass": true,
+          "gate_results": [
+            {
+              "denominator": 1,
+              "detail": "",
+              "name": "schema_valid",
+              "numerator": 1,
+              "passed": true,
+              "split": null,
+              "threshold": 1
+            },
+            {
+              "denominator": 500,
+              "detail": "+0 false positives, budget 2 (0.5 pp)",
+              "name": "fpr_budget",
+              "numerator": 0,
+              "passed": true,
+              "split": "final_holdout",
+              "threshold": 2
+            },
+            {
+              "denominator": 8,
+              "detail": "8/8 previously caught attacks still caught",
+              "name": "regression_no_loss",
+              "numerator": 8,
+              "passed": true,
+              "split": "regression",
+              "threshold": 8
+            },
+            {
+              "denominator": 20,
+              "detail": "lookalikes flagged 0 -> 0",
+              "name": "regression_benign",
+              "numerator": 0,
+              "passed": true,
+              "split": "regression",
+              "threshold": 0
+            },
+            {
+              "denominator": 48,
+              "detail": "8 -> 32 of 48 caught",
+              "name": "holdout_recall_gain",
+              "numerator": 24,
+              "passed": true,
+              "split": "final_holdout",
+              "threshold": 1
+            }
+          ],
+          "holdout_pass": true,
+          "missed_breakdown": [
+            {
+              "count": 8,
+              "label": "Held money longer than 24 hours",
+              "reason": "long_hold"
+            },
+            {
+              "count": 8,
+              "label": "Chain too short (under 4 hops)",
+              "reason": "short_chain"
+            }
+          ],
+          "patch_id": "golden-hop-count",
+          "recall_after": 0.6666666666666666,
+          "recall_before": 0.16666666666666666,
+          "regression_pass": true,
+          "report_id": "rep-000001",
+          "run_id": "run-000001"
+        }
+      ],
+      "events": [
+        {
+          "event_id": "evt-00000002",
+          "seq": 2,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:initialize_lab",
+          "input_hash": null,
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000003",
+          "seq": 3,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:generate_world",
+          "input_hash": null,
+          "output_hash": "bc69aa91d89a513826ede93cc63fd592aabf8be7c806b521f96f17c59dfcd2b5",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000004",
+          "seq": 4,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:baseline_score",
+          "input_hash": null,
+          "output_hash": "ba558373304960b04860df753167a3944a3387a33f75295f0cac2507d0440a72",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000005",
+          "seq": 5,
+          "timestamp": 1792907037,
+          "actor": "agent:red",
+          "run_id": "run-000001",
+          "action": "enter:red_proposes",
+          "input_hash": null,
+          "output_hash": "dd32519890203627c0aa4ba2108a2d0126008e0804ddb9cd9950167454dec13b",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000006",
+          "seq": 6,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:validate_actions",
+          "input_hash": null,
+          "output_hash": "cb325527bdb0fb84da18c91aeb41b075c1cf2e5eef32ce901eb91a925ab5c7c7",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000007",
+          "seq": 7,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:run_simulation",
+          "input_hash": null,
+          "output_hash": "025e5b49a2183c8ebf1fc2b25e9348c21ba4a571a6f805eb152a33e927c06a2c",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000008",
+          "seq": 8,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:measure_outcome",
+          "input_hash": null,
+          "output_hash": "33e0922456db0b6b9cb66ca336fa403540fb961e6e6cc6770c799c687d1c472f",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000009",
+          "seq": 9,
+          "timestamp": 1792907037,
+          "actor": "agent:blue",
+          "run_id": "run-000001",
+          "action": "enter:blue_proposes",
+          "input_hash": "3b2058c232a48b33cc1a50d632ec155c6ae6e4795fa978ef2b53e5410c4c500f",
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000010",
+          "seq": 10,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:validate_patch",
+          "input_hash": null,
+          "output_hash": "62685e722ef669247aef4182d3951eb31e1b944d7c4be58ab83b99613b2eba11",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000011",
+          "seq": 11,
+          "timestamp": 1792907037,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:evaluate_holdouts",
+          "input_hash": "e164170f751ab9774f998309b27f2d061fcc940b8a2431798e9e4467efb07eb0",
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000012",
+          "seq": 12,
+          "timestamp": 1792907038,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:apply_gates",
+          "input_hash": null,
+          "output_hash": "9289ba6fe647b915c7f770c93daad079d5c6e1c40a9ccec09fc757bd86ed6dfb",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000013",
+          "seq": 13,
+          "timestamp": 1792907038,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:await_human",
+          "input_hash": null,
+          "output_hash": "2f2bf653eb09fe0d2b2595559e326fa79e470b42099d87d71e29f4074270e2ec",
+          "version_before": 1,
+          "version_after": null
+        },
+        {
+          "event_id": "evt-00000014",
+          "seq": 14,
+          "timestamp": 1792907038,
+          "actor": "human",
+          "run_id": "run-000001",
+          "action": "reject",
+          "input_hash": "e47077a18729f3b731b2888058f98992c13ba495033a91c62bd6cff4e174853f",
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": 1
+        },
+        {
+          "event_id": "evt-00000015",
+          "seq": 15,
+          "timestamp": 1792907038,
+          "actor": "human",
+          "run_id": "run-000001",
+          "action": "enter:reject_no_change",
+          "input_hash": null,
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": 1
+        },
+        {
+          "event_id": "evt-00000016",
+          "seq": 16,
+          "timestamp": 1792907038,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:rechallenge",
+          "input_hash": null,
+          "output_hash": "04e0e3159c20b11106f8015a764f046daa2d5c6b0f03ea283d00e2e10c01175f",
+          "version_before": 1,
+          "version_after": 1
+        },
+        {
+          "event_id": "evt-00000017",
+          "seq": 17,
+          "timestamp": 1792907038,
+          "actor": "system",
+          "run_id": "run-000001",
+          "action": "enter:complete",
+          "input_hash": null,
+          "output_hash": null,
+          "version_before": 1,
+          "version_after": 1
+        }
+      ],
+      "rechallenge": {
+        "scenario_id": "final_holdout.slow_chain_3.10001",
+        "detector_version": 1,
+        "alert": false,
+        "triggered_rule_ids": [],
+        "features": {},
+        "first_alert_time": null
+      }
+    }
+  }
+}

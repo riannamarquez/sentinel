@@ -105,8 +105,8 @@ export default function ScorecardStep({ report, onEvaluate, loading }: {
 }) {
   if (!report) {
     return (
-      <StepCard id="step-evaluate" label="Held-out evaluation" title="Test the fix on unseen data"
-        subtitle="The fix is scored on attacks and customers neither AI has seen."
+      <StepCard id="step-evaluate" label="Step 5 · Independent evaluation" title="Check whether Blue’s fix works"
+        subtitle="Deterministic code—not Red or Blue—compares the old and proposed rules on unseen attacks and normal customers."
         action={<button onClick={onEvaluate} disabled={loading} className={BUTTON_PRIMARY}>Run evaluation</button>} />
     );
   }
@@ -117,7 +117,7 @@ export default function ScorecardStep({ report, onEvaluate, loading }: {
   const net = after && before ? after.tp - before.tp : null;
   const ROW = "border-b border-line";
   return (
-    <StepCard id="scorecard" label={`Held-out evaluation · ${report.attack_n} attacks / ${report.benign_n} customers`}
+    <StepCard id="scorecard" label={`Step 5 · Independent test · ${report.attack_n} attacks / ${report.benign_n} customers`}
       title="Performance scorecard" action={<Chip tone="muted" icon={ShieldIcon}>Deterministic test</Chip>}>
       <div className="space-y-6 border-t border-line pt-4">
         {before && after && (

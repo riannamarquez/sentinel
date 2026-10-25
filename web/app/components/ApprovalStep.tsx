@@ -21,10 +21,10 @@ export default function ApprovalStep({ report, approval, onDecide, loading }: {
 
   if (!report) {
     return (
-      <StepCard id="step-approval" label="Human sign-off" title="Your decision"
-        subtitle="No production rule changes unless you approve this proposal.">
+      <StepCard id="step-approval" label="Step 6 · You · Human reviewer" title="Approve or reject Blue’s fix"
+        subtitle="Red can attack and Blue can propose. Only your approval activates a new rule in this synthetic lab.">
         <p className="border-t border-line pt-5 text-[15px] text-muted">
-          The decision opens once Blue&apos;s proposal has been scored on held-out data.
+          First Red finds an attack, then Blue proposes a fix. Your decision opens after the independent evaluation.
         </p>
       </StepCard>
     );
@@ -39,8 +39,8 @@ export default function ApprovalStep({ report, approval, onDecide, loading }: {
   ] : [];
 
   return (
-    <StepCard id="step-approval" label="Human sign-off" title="Your decision"
-      subtitle="No production rule changes unless you approve this proposal.">
+    <StepCard id="step-approval" label="Step 6 · You · Human reviewer" title="Approve or reject Blue’s fix"
+      subtitle="Red can attack and Blue can propose. Only your approval activates a new rule in this synthetic lab.">
       <dl className="border-y border-line py-3">
         {rows.map((r) => (
           <div key={r.label} className="flex justify-between py-2.5 text-[15px]">
