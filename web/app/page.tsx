@@ -10,7 +10,7 @@ import ErrorBanner from "./components/ErrorBanner";
 import EvidenceLog, { formatUtc } from "./components/EvidenceLog";
 import IntroCard, { useIntroDismissed } from "./components/IntroCard";
 import NetworkMap from "./components/NetworkMap";
-import RedStep, { WhyItGotThrough } from "./components/RedStep";
+import RedStep, { RedSource, WhyItGotThrough } from "./components/RedStep";
 import ScorecardStep from "./components/ScorecardStep";
 import SetupCard from "./components/SetupCard";
 import StepCard from "./components/StepCard";
@@ -296,6 +296,7 @@ export default function Home() {
                 <StepCard id="step-red" label="Red agent finding" labelTone="coral" title="Attack path"
                   subtitle="Red's attack appears here after the baseline test." />
               )}
+              {redRun && <RedSource sources={redRun.turn_sources} />}
               {errorFor("red")}
             </div>
 

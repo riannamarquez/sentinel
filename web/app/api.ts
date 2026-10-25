@@ -31,8 +31,10 @@ export type Bypass = {
   detector_version: number;
   rationale: string;
 };
+// Which policy produced a Red turn; "heuristic_fallback" carries why the LLM's turn was replaced.
+export type TurnSource = { turn: number; policy: string; reason?: string; detail?: string };
 // `rules` is the detector version Red attacked (bypass.detector_version), read from the lab.
-export type RedRun = { run_id: string; turns: number; bypass: Bypass | null; rules: Rule[] | null };
+export type RedRun = { run_id: string; turns: number; bypass: Bypass | null; rules: Rule[] | null; turn_sources: TurnSource[] };
 export type Rule = { rule_id: string; all_of: Condition[] };
 export type Condition = {
   feature_key: string;
@@ -49,7 +51,8 @@ export type RulePatch = {
   rationale: string;
 };
 export type PatchResult = { patch: RulePatch; valid: boolean; error: string | null };
-export type PatchRun = { state: string; patches: PatchResult[] };
+export type BlueSource = "llm_live" | "llm_replay" | "fixture";
+export type PatchRun = { state: string; patches: PatchResult[]; source: BlueSource | null };
 export type Confusion = { tp: number; fp: number; tn: number; fn: number };
 export type GateResult = { name: string; passed: boolean; detail: string; numerator: number; denominator: number; threshold: number };
 export type EvaluationReport = {
@@ -177,7 +180,7 @@ export async function startRedRun(labId: string): Promise<RedRun> {
   const data = await request(`/labs/${labId}/red-runs`, {});
   const bypass: Bypass | null = data.bypass;
   const rules = bypass ? await getRules(labId, bypass.detector_version) : null;
-  return { run_id: data.run_id, turns: data.turns, bypass, rules };
+  return { run_id: data.run_id, turns: data.turns, bypass, rules, turn_sources: data.turn_sources ?? [] };
 }
 
 export function replayBypass(labId: string, runId: string, rules: ReplayChoice): Promise<BypassReplay> {
@@ -194,7 +197,7 @@ export async function getRechallenge(runId: string): Promise<Rechallenge | null>
 
 export async function proposePatches(labId: string, runId: string, bypassId: string): Promise<PatchRun> {
   const data = await request(`/labs/${labId}/patches`, { run_id: runId, bypass_id: bypassId });
-  return { state: data.state, patches: data.patches };
+  return { state: data.state, patches: data.patches, source: data.source ?? null };
 }
 
 export function evaluatePatch(labId: string, runId: string, patchId: string): Promise<EvaluationReport> {
