@@ -242,9 +242,14 @@ export default function Home() {
               <span className={`h-2 w-2 rounded-full ${complete ? "bg-mint" : "bg-lavender"}`} />
               <span className="tabular-nums">{status}</span>
             </p>
-            <h1 className="mt-3 text-[56px] leading-[1.05] text-ink">Rule change review</h1>
+            {/* Before a lab exists, say what Sentinel is for; after, it's the review screen. */}
+            <h1 className="mt-3 text-[56px] leading-[1.05] text-ink">
+              {labId ? "Rule change review" : "Close fraud gaps before they cost banks."}
+            </h1>
             <p className="mt-4 text-[19px] text-muted">
-              Review Blue&apos;s proposed response to an attack discovered by Red, scored against held-out data.
+              {labId
+                ? "Review Blue's proposed response to an attack discovered by Red, scored against held-out data."
+                : "Sentinel helps a fraud analyst improve their bank's fraud rules. An AI attacker finds a gap, an AI defender proposes a fix, and you decide whether it ships."}
             </p>
           </div>
           {completedAt && (
