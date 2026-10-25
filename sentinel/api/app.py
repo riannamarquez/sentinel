@@ -1,7 +1,7 @@
 """Sentinel API (design-v2 §7). Blue supports live/fixture/replay and background execution.
 
 Run: make run   (or: uvicorn --factory sentinel.api.app:create_app). The database path comes from
-SENTINEL_DB (default ./sentinel.db). SENTINEL_RED picks Red's policy: "heuristic" (default) or "fixture".
+SENTINEL_DB (default ./sentinel.db). SENTINEL_RED picks Red's policy: "heuristic" (default), "fixture" or "llm".
 """
 from __future__ import annotations
 
@@ -85,6 +85,11 @@ def red_policy_from_env(adapter=None):
     return RED_POLICIES[name]()
 
 
+def blue_source(adapter) -> str:
+    """Where Blue's proposals come from: the configured adapter's mode, or the golden fixture without one."""
+    return f"llm_{adapter.mode}" if adapter else "fixture"   # llm_live or llm_replay
+
+
 @lru_cache(maxsize=8)
 def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list]:
     """Deterministic, so caching by (seed, sizes) is safe; every evaluation of a lab sees the same splits."""
@@ -96,6 +101,7 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
     store = Store(db_path)
     adapter = adapter if adapter is not None else from_env(db_path)
     red_policy = red_policy or red_policy_from_env(adapter)   # an unknown SENTINEL_RED fails here, at startup
+    red_name = getattr(red_policy, "name", "custom")
     executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sentinel")
     slots = BoundedSemaphore(4)  # total admitted background + synchronous steps
     workers = BoundedSemaphore(2)
@@ -133,7 +139,9 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
 
     @app.get("/healthz")
     def healthz():
-        return {"ok": True, "llm": adapter.mode if adapter else "fixture", "journal_mode": store.journal_mode()}
+        return {"ok": True, "llm": adapter.mode if adapter else "fixture", "journal_mode": store.journal_mode(),
+                "red_policy": red_name, "blue_source": blue_source(adapter),
+                "llm_model": adapter.model if adapter else None}
 
     @app.post("/labs", status_code=201)
     def create_lab(config: BankConfig):
@@ -165,10 +173,18 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
         store.transition(run_id, S.BASELINE_SCORE, out=rules)
 
         history: list[red.Attempt] = []
+        turn_sources: list[dict] = []   # which policy produced each turn, so a fallback is never silent
         for turn in range(1, body.max_turns + 1):
-            candidates = red_policy.propose(objective_cents=body.objective_cents, rules=rules, turn=turn,
-                                            history=history, seed=lab["config"].seed, run_id=run_id)
-            store.transition(run_id, S.RED_PROPOSES, actor="agent:red", turns=turn,
+            args = dict(objective_cents=body.objective_cents, rules=rules, turn=turn,
+                        history=history, seed=lab["config"].seed, run_id=run_id)
+            if hasattr(red_policy, "propose_turn"):
+                candidates, source = red_policy.propose_turn(**args)
+            else:
+                candidates, source = red_policy.propose(**args), {"policy": red_name}
+            turn_sources.append({"turn": turn, **source})
+            # The evidence log shows the actor, so the policy (and any fallback reason) goes there.
+            actor = ":".join(["agent:red", source["policy"], *([source["reason"]] if "reason" in source else [])])
+            store.transition(run_id, S.RED_PROPOSES, actor=actor, turns=turn,
                              out=[c.actions for c in candidates])
             valid, dropped = [], []
             for i, c in enumerate(candidates):
@@ -201,17 +217,18 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
                     why_it_worked=diagnose(scenario, rules), rationale=cand.rationale)
                 store.save_bypass(run_id, trace)
                 return {"run_id": run_id, "state": S.MEASURE_OUTCOME, "turns": turn, "bypass": trace,
-                        "history": [a.model_dump() for a in history]}
+                        "history": [a.model_dump() for a in history], "turn_sources": turn_sources}
         store.transition(run_id, S.NO_BYPASS_FOUND)
         return {"run_id": run_id, "state": S.NO_BYPASS_FOUND, "turns": body.max_turns, "bypass": None,
-                "history": [a.model_dump() for a in history]}
+                "history": [a.model_dump() for a in history], "turn_sources": turn_sources}
 
     def process_patches(lab_id: str, body: PatchRequest):
         run = store.run(body.run_id, lab_id)
         require_state(run, S.MEASURE_OUTCOME)
         trace = store.bypass(body.bypass_id, body.run_id)
         rules = store.rules(lab_id, run["base_version"])
-        store.transition(body.run_id, S.BLUE_PROPOSES, actor="agent:blue", inp=trace)
+        source = blue_source(adapter)
+        store.transition(body.run_id, S.BLUE_PROPOSES, actor=f"agent:blue:{source}", inp=trace)
         try:
             proposed = (blue.propose(trace, rules, run["base_version"], adapter=adapter) if adapter
                         else blue.propose(trace, rules, run["base_version"]))
@@ -231,9 +248,9 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
             out.append({"patch": p, "valid": error is None, "error": error})
         if not any(o["valid"] for o in out):
             store.transition(body.run_id, S.FAILED, failure="no valid patch")
-            return {"run_id": body.run_id, "state": S.FAILED, "patches": out}
+            return {"run_id": body.run_id, "state": S.FAILED, "patches": out, "source": source}
         store.transition(body.run_id, S.VALIDATE_PATCH, out=out)
-        return {"run_id": body.run_id, "state": S.VALIDATE_PATCH, "patches": out}
+        return {"run_id": body.run_id, "state": S.VALIDATE_PATCH, "patches": out, "source": source}
 
     def process_evaluation(lab_id: str, body: EvaluationRequest):
         run = store.run(body.run_id, lab_id)

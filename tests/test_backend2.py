@@ -174,3 +174,17 @@ def test_environment_defaults_to_gemini(tmp_path, monkeypatch):
     assert isinstance(adapter.transport, GeminiTransport)
     assert adapter.transport.endpoint.endswith('/models/gemini-test:generateContent')
     assert adapter.model == 'gemini-test'
+
+
+def test_live_blue_source_is_reported(tmp_path):
+    adapter = Adapter(lambda r: {'patches': [load_golden_patch().model_dump(mode='json')]},
+                      ResponseStore(tmp_path / 'llm.db'))
+    with TestClient(create_app(str(tmp_path / 'app.db'), adapter=adapter)) as client:
+        assert client.get('/healthz').json()['blue_source'] == 'llm_live'
+        lab = client.post('/labs', json={'seed': 7, 'account_count': 10}).json()['lab_id']
+        red = client.post(f'/labs/{lab}/red-runs', json={}).json()
+        patches = client.post(f'/labs/{lab}/patches',
+                              json={'run_id': red['run_id'], 'bypass_id': red['bypass']['bypass_id']}).json()
+        assert patches['source'] == 'llm_live'
+        actors = [e['actor'] for e in client.get(f"/runs/{red['run_id']}").json()['events']]
+        assert 'agent:blue:llm_live' in actors

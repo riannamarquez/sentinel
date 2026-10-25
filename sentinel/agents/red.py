@@ -3,6 +3,7 @@ FixtureRedPolicy replays the hand-written slow-variant bypass; HeuristicRedPolic
 caught its earlier attempts by breaking one condition of each, chosen by feature."""
 from __future__ import annotations
 
+import logging
 import math
 import random
 from collections.abc import Sequence
@@ -18,7 +19,9 @@ from sentinel.sim.actions import HORIZON_S, MAX_OPENED_ACCOUNTS
 from sentinel.sim.clock import HOUR, MINUTE, rand_time
 from sentinel.sim.fraud import CASHOUT, SOURCE, Plan
 from sentinel.sim.rng import rng_for
-from sentinel.llm.adapter import AdapterError
+from sentinel.llm.adapter import AdapterError, ReplayMiss
+
+logger = logging.getLogger(__name__)
 
 FORWARD_PCT = 95   # each mule forwards this much of what it received and keeps the rest
 MAX_SPLIT_GAP_MINUTES = 10   # recipe_to_candidate spaces a hop's splits 2-10 minutes apart
@@ -122,6 +125,7 @@ class Attempt(Model):
 
 class FixtureRedPolicy:
     """Same candidate every turn: the hand-written bypass from fixtures. Ignores its inputs."""
+    name = "fixture"
 
     def propose(self, *, objective_cents: int, rules: Sequence[Rule], turn: int, history: Sequence[Attempt],
                 seed: int, run_id: str) -> list[RedCandidate]:
@@ -170,6 +174,7 @@ class HeuristicRedPolicy:
     Fixes are chosen by feature, never by rule id, so rules Blue adds later are handled the same way.
     Which recipes it proposes is deterministic; only the start times come from rng_for.
     """
+    name = "heuristic"
 
     def propose(self, *, objective_cents: int, rules: Sequence[Rule], turn: int, history: Sequence[Attempt],
                 seed: int, run_id: str) -> list[RedCandidate]:
@@ -247,24 +252,37 @@ class LLMRedPolicy:
     """Asks the LLM for recipes through Backend 2's adapter; falls back to the heuristic if that fails.
 
     Same propose() signature as the other policies, so app.py's red-run loop doesn't change.
+    propose_turn() also says which policy produced the turn, so a fallback is never silent.
     """
+    name = "llm"
 
     def __init__(self, adapter, fallback=None):
         self.adapter = adapter
         self.fallback = fallback or HeuristicRedPolicy()
 
-    def propose(self, *, objective_cents: int, rules: Sequence[Rule], turn: int, history: Sequence[Attempt],
-                seed: int, run_id: str) -> list[RedCandidate]:
+    def propose(self, **args) -> list[RedCandidate]:
+        return self.propose_turn(**args)[0]
+
+    def propose_turn(self, *, objective_cents: int, rules: Sequence[Rule], turn: int, history: Sequence[Attempt],
+                     seed: int, run_id: str) -> tuple[list[RedCandidate], dict]:
+        """The turn's candidates and their source: {"policy": "llm"} or a heuristic_fallback with its reason."""
         args = dict(objective_cents=objective_cents, rules=rules, turn=turn, history=history,
                     seed=seed, run_id=run_id)
         try:
             proposal = self.adapter.propose("red", red_prompt_inputs(objective_cents, rules, turn, history),
                                             RedProposal, prompt_version="red-v1")
-        except AdapterError:
-            return self.fallback.propose(**args)   # LLM down or invalid three times: the demo keeps going
+        except AdapterError as e:   # LLM down or invalid three times: the demo keeps going
+            reason = "replay_miss" if isinstance(e, ReplayMiss) else "llm_error"
+            return self._fall_back(args, reason, str(e))
         tried = {a.recipe for a in history}
         recipes = [r for r in proposal.recipes if r not in tried and _reaches_objective(r, objective_cents)]
         if not recipes:
-            return self.fallback.propose(**args)   # nothing new and usable from the LLM this turn
-        return [recipe_to_candidate(r, rng_for(seed, run_id, "red", turn, i))
-                for i, r in enumerate(recipes[:MAX_CANDIDATES])]
+            return self._fall_back(args, "no_usable_recipes",
+                                   f"all {len(proposal.recipes)} LLM recipes were already tried or miss the objective")
+        return ([recipe_to_candidate(r, rng_for(seed, run_id, "red", turn, i))
+                 for i, r in enumerate(recipes[:MAX_CANDIDATES])], {"policy": "llm"})
+
+    def _fall_back(self, args: dict, reason: str, detail: str) -> tuple[list[RedCandidate], dict]:
+        logger.warning("Red %s turn %d fell back to the heuristic: %s (%s)",
+                       args["run_id"], args["turn"], reason, detail)
+        return self.fallback.propose(**args), {"policy": "heuristic_fallback", "reason": reason, "detail": detail}
