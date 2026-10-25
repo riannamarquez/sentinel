@@ -1,5 +1,7 @@
 # Morning summary
 
+> This records the original walking skeleton. For the subsequent Backend 2 implementation, setup and remaining scope, see [BACKEND2.md](BACKEND2.md).
+
 Branch `claude/serene-thompson-dpf75m`, one commit per step. No LLM calls; agents are fixture stubs.
 
 ## Done
