@@ -2,28 +2,16 @@
 
 import { useSyncExternalStore } from "react";
 
-const KEY = "sentinel.introDismissed";
 const listeners = new Set<() => void>();
-// Used when localStorage is blocked, so "Got it" still works for this visit.
-let memory: boolean | null = null;
+// In memory only, so the card is back on every page load (for user testing and demos).
+let memory = false;
 
 function readDismissed() {
-  if (memory !== null) return memory;
-  try {
-    return localStorage.getItem(KEY) === "1";
-  } catch {
-    return false;
-  }
+  return memory;
 }
 
 function setDismissed(dismissed: boolean) {
   memory = dismissed;
-  try {
-    if (dismissed) localStorage.setItem(KEY, "1");
-    else localStorage.removeItem(KEY);
-  } catch {
-    // Storage blocked: the in-memory value above still applies.
-  }
   listeners.forEach((l) => l());
 }
 
@@ -32,9 +20,9 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-// Hidden during prerender, so returning visitors never see the card flash in and out.
+// Shown during prerender too, matching the client's first render: no flash, no hydration mismatch.
 export function useIntroDismissed() {
-  const dismissed = useSyncExternalStore(subscribe, readDismissed, () => true);
+  const dismissed = useSyncExternalStore(subscribe, readDismissed, () => false);
   return [dismissed, setDismissed] as const;
 }
 
