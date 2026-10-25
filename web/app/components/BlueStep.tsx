@@ -10,7 +10,8 @@ export default function BlueStep({ patchRun, onAsk, loading }: {
   loading: boolean;
 }) {
   return (
-    <StepCard id="step-blue" title="4. Ask Blue to close the gap" action={
+    <StepCard id="step-blue" title="4. Ask Blue to close the gap"
+      subtitle="Blue proposes a rule change to close the gap Red found." action={
       <button onClick={onAsk} disabled={loading}
         className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50">
         Ask Blue for a fix

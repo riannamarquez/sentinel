@@ -11,7 +11,7 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Bypass } from "../api";
+import type { Approval, Bypass } from "../api";
 import { dollars } from "./format";
 
 const RED = "#dc2626";
@@ -23,7 +23,7 @@ const NODE_WIDTH = 150;
 const X_STEP = 40;
 const Y_STEP = 140;
 
-type HopData = { amount: string; waited: string | null; attack: boolean; blockedBy: string | null };
+type HopData = { amount: string; waited: string | null; attack: boolean };
 type HopEdge = Edge<HopData, "hop">;
 
 function accountLabel(id: string) {
@@ -54,11 +54,6 @@ function HopEdgeView({ id, sourceX, sourceY, targetX, targetY, data, markerEnd }
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, borderColor: color }}>
             <div className="text-[15px] font-bold" style={{ color }}>{data.amount}</div>
             {data.waited && <div className="text-xs text-slate-600">{data.waited}</div>}
-            {data.blockedBy && (
-              <div className="mt-1 rounded bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
-                ✓ Blocked by {data.blockedBy}
-              </div>
-            )}
           </div>
         </EdgeLabelRenderer>
       )}
@@ -68,7 +63,7 @@ function HopEdgeView({ id, sourceX, sourceY, targetX, targetY, data, markerEnd }
 
 const edgeTypes = { hop: HopEdgeView };
 
-function buildGraph(bypass: Bypass, blockedBy: string | null) {
+function buildGraph(bypass: Bypass) {
   const txs = [...bypass.scenario.transactions].sort((a, b) => a.timestamp - b.timestamp);
   const attackAccounts = new Set(
     txs.filter((t) => t.ground_truth_label === "malicious").flatMap((t) => [t.from_id, t.to_id]),
@@ -113,7 +108,6 @@ function buildGraph(bypass: Bypass, blockedBy: string | null) {
         amount: dollars(Math.round(t.amount_cents / 100) * 100),
         waited: inflow ? waitedLabel(t.timestamp - inflow.timestamp) : null,
         attack,
-        blockedBy: i === txs.length - 1 ? blockedBy : null,
       },
     };
   });
@@ -121,7 +115,25 @@ function buildGraph(bypass: Bypass, blockedBy: string | null) {
   return { nodes, edges };
 }
 
-export default function NetworkMap({ bypass, blockedBy }: { bypass: Bypass | null; blockedBy: string | null }) {
+// The rechallenge is a fresh slow-chain attack, not this exact path, so the result is
+// reported under the map rather than drawn onto any hop.
+function RechallengeBanner({ rechallenge }: { rechallenge: NonNullable<Approval["rechallenge"]> }) {
+  const fired = rechallenge.triggered_rule_ids.join(", ");
+  return rechallenge.alert ? (
+    <div className="border-t-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+      ✓ New rule caught a fresh attack like this one{fired && ` (fired: ${fired})`}
+    </div>
+  ) : (
+    <div className="border-t-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900">
+      ✗ A fresh attack like this one still got through
+    </div>
+  );
+}
+
+export default function NetworkMap({ bypass, rechallenge }: {
+  bypass: Bypass | null;
+  rechallenge: Approval["rechallenge"];
+}) {
   if (!bypass) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-6 text-center">
@@ -131,14 +143,22 @@ export default function NetworkMap({ bypass, blockedBy }: { bypass: Bypass | nul
     );
   }
 
-  const { nodes, edges } = buildGraph(bypass, blockedBy);
+  const { nodes, edges } = buildGraph(bypass);
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-3 text-sm">
-        <span className="font-semibold">Red&apos;s attack path</span>
-        <span className="flex items-center gap-1 text-xs text-slate-500">
-          <span className="inline-block h-0.5 w-4 bg-red-600" /> stolen money
-        </span>
+      <div className="border-b px-4 py-3">
+        <p className="text-sm font-semibold">Red&apos;s attack path</p>
+        <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4 bg-red-600" /> stolen money
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-4 rounded-sm border-2 border-slate-400" /> inside this bank
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-4 rounded-sm border-2 border-dashed border-slate-400" /> outside (another institution)
+          </li>
+        </ul>
       </div>
       <div className="min-h-0 flex-1">
         {/* Remount per bypass so fitView re-frames the new path. */}
@@ -148,6 +168,7 @@ export default function NetworkMap({ bypass, blockedBy }: { bypass: Bypass | nul
           panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false}
           preventScrolling={false} />
       </div>
+      {rechallenge && <RechallengeBanner rechallenge={rechallenge} />}
     </div>
   );
 }

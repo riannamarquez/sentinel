@@ -57,7 +57,9 @@ export type EvaluationReport = {
   candidate_confusion: Record<string, Confusion>;
   gate_results: GateResult[];
   eligible_for_approval: boolean;
+  missed_breakdown?: MissReason[]; // absent from older backends
 };
+export type MissReason = { reason: string; label: string; count: number };
 export type Decision = "approve" | "reject";
 export type Approval = {
   decision: Decision;
@@ -66,57 +68,80 @@ export type Approval = {
   rechallenge: { alert: boolean; triggered_rule_ids: string[] } | null;
 };
 
-// Plain-English messages for the approval endpoint's 409 reasons.
-const CONFLICTS: Record<string, string> = {
+const UNREACHABLE = "Can't reach the Sentinel backend. Is `make run` running in the repo folder?";
+
+// Plain-English sentences for the backend's error codes (the `reason` field).
+const REASONS: Record<string, string> = {
   gates_failed: "This fix can't be approved because at least one safety check failed.",
   already_decided: "A decision was already made on this report, so it can't be changed.",
   stale_base_version: "The detector changed since this fix was tested. Run a new round against the current rules.",
+  invalid_patch: "That fix was rejected as invalid, so it can't be evaluated.",
+  invalid_state: "This step is out of order for the current round.",
+  invalid_transition: "The round can't move to that step from where it is now.",
+  not_found: "The backend doesn't know this lab or run. It may have restarted, so create a new lab.",
+  unsupported: "The backend doesn't support that request.",
 };
 
-async function post(path: string, label: string, body?: unknown) {
-  const res = await fetch(`/api${path}`, body === undefined ? { method: "POST" } : {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${label} failed (${res.status})`);
-  return res.json();
+// What the UI shows: a plain-English sentence, plus the server's detail when it sent one.
+export class ApiError extends Error {
+  constructor(message: string, readonly detail: string | null = null) {
+    super(message);
+  }
+}
+
+// FastAPI sends `detail` as a string, or as a list of {msg} for request validation errors.
+function detailText(detail: unknown): string | null {
+  if (typeof detail === "string") return detail || null;
+  if (Array.isArray(detail)) return detail.map((d) => d?.msg ?? JSON.stringify(d)).join("; ") || null;
+  return null;
+}
+
+async function request(path: string, body?: unknown) {
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, body === undefined ? { method: "POST" } : {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(UNREACHABLE);
+  }
+  const data = await res.json().catch(() => null);
+  if (res.ok) {
+    if (data === null) throw new ApiError(`Something went wrong (status ${res.status})`, "The backend sent a response that isn't JSON.");
+    return data;
+  }
+  if (data === null && [500, 502, 503, 504].includes(res.status)) throw new ApiError(UNREACHABLE);
+  const detail = detailText(data?.detail);
+  const reason = REASONS[data?.reason];
+  throw new ApiError(reason ?? `Something went wrong (status ${res.status})`, detail);
 }
 
 export function createLab(seed: number, accountCount: number): Promise<Lab> {
-  return post("/labs", "Create lab", { seed, account_count: accountCount });
+  return request("/labs", { seed, account_count: accountCount });
 }
 
 export async function runBaseline(labId: string): Promise<BaselineResult[]> {
-  return (await post(`/labs/${labId}/baseline`, "Baseline")).results;
+  return (await request(`/labs/${labId}/baseline`)).results;
 }
 
 export async function startRedRun(labId: string): Promise<RedRun> {
-  const data = await post(`/labs/${labId}/red-runs`, "Red challenge", {});
+  const data = await request(`/labs/${labId}/red-runs`, {});
   return { run_id: data.run_id, turns: data.turns, bypass: data.bypass };
 }
 
 export async function proposePatches(labId: string, runId: string, bypassId: string): Promise<PatchRun> {
-  const data = await post(`/labs/${labId}/patches`, "Blue fix", { run_id: runId, bypass_id: bypassId });
+  const data = await request(`/labs/${labId}/patches`, { run_id: runId, bypass_id: bypassId });
   return { state: data.state, patches: data.patches };
 }
 
 export function evaluatePatch(labId: string, runId: string, patchId: string): Promise<EvaluationReport> {
-  return post(`/labs/${labId}/evaluations`, "Evaluation", { run_id: runId, patch_id: patchId });
+  return request(`/labs/${labId}/evaluations`, { run_id: runId, patch_id: patchId });
 }
 
 export async function decide(labId: string, reportId: string, decision: Decision): Promise<Approval> {
-  const res = await fetch(`/api/labs/${labId}/approvals`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ report_id: reportId, decision }),
-  });
-  if (res.status === 409) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(CONFLICTS[body.reason] ?? body.detail ?? "This decision conflicts with the lab's current state.");
-  }
-  if (!res.ok) throw new Error(`Decision failed (${res.status})`);
-  const data = await res.json();
+  const data = await request(`/labs/${labId}/approvals`, { report_id: reportId, decision });
   return {
     decision: data.decision,
     version_created: data.version_created,

@@ -8,7 +8,7 @@ export default function ApprovalStep({ report, approval, onDecide, loading }: {
   loading: boolean;
 }) {
   return (
-    <StepCard id="step-approval" title="6. Your decision">
+    <StepCard id="step-approval" title="6. Your decision" subtitle="Nothing changes unless you approve.">
       <div className="flex flex-wrap items-center gap-4">
         <button onClick={() => onDecide("approve")} disabled={loading || !!approval || !report.eligible_for_approval}
           className="rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:opacity-50">

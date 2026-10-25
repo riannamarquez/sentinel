@@ -1,4 +1,4 @@
-import type { EvaluationReport } from "../api";
+import type { EvaluationReport, MissReason } from "../api";
 import StepCard from "./StepCard";
 
 const GATES: Record<string, string> = {
@@ -20,7 +20,8 @@ export default function ScorecardStep({ onEvaluate, loading, evaluated }: {
   evaluated: boolean;
 }) {
   return (
-    <StepCard id="step-evaluate" title="5. Test the fix on unseen data" action={
+    <StepCard id="step-evaluate" title="5. Test the fix on unseen data"
+      subtitle="The fix is scored on attacks and customers neither AI has seen." action={
       <button onClick={onEvaluate} disabled={loading}
         className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-50">
         Evaluate on unseen data
@@ -30,6 +31,38 @@ export default function ScorecardStep({ onEvaluate, loading, evaluated }: {
         <p className="text-sm text-slate-600">Results are in the scorecard. Approve or reject the fix there.</p>
       )}
     </StepCard>
+  );
+}
+
+// An honest limitation, not an error: amber, never red.
+function StillMissed({ missed, total, breakdown }: { missed: number; total: number; breakdown?: MissReason[] }) {
+  const rows = [...(breakdown ?? [])].sort((a, b) => b.count - a.count);
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <h3 className="font-semibold text-amber-900">Still missed: {missed} of {total} attacks</h3>
+      {missed > 0 && (
+        <>
+          {breakdown === undefined ? (
+            <p className="mt-1 text-sm text-amber-900">Breakdown not available yet.</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {rows.map((m) => (
+                <li key={m.reason} className="text-sm text-amber-950">
+                  <div className="mb-1 flex justify-between gap-2">
+                    <span>{m.label}</span>
+                    <span className="font-semibold">{m.count}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-amber-100">
+                    <div className="h-2 rounded-full bg-amber-400" style={{ width: `${(m.count / missed) * 100}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-sm text-amber-800">Consider a follow-up rule for these patterns.</p>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -65,6 +98,10 @@ export function Scorecard({ report }: { report: EvaluationReport }) {
               </tr>
             </tbody>
           </table>
+        )}
+
+        {after && (
+          <StillMissed missed={report.attack_n - after.tp} total={report.attack_n} breakdown={report.missed_breakdown} />
         )}
 
         <ul className="space-y-2">
