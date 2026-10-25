@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from sentinel.agents import blue, red
+from sentinel.api.bypass_replay import replay_bypass
 from sentinel.api.states import InvalidTransition, RunState, TERMINAL
 from sentinel.api.store import Conflict, NotFound, Store
 from sentinel.api.timeline import Timeline, build_timeline
@@ -51,6 +52,11 @@ class RedRunRequest(Body):
     max_turns: int = Field(default=4, ge=1, le=4)
 
 
+class ReplayBypassRequest(Body):
+    rules: Literal["base", "candidate", "active"]
+    patch_id: str | None = None   # candidate only; defaults to the run's evaluated patch
+
+
 class PatchRequest(Body):
     run_id: str
     bypass_id: str
@@ -66,13 +72,17 @@ class ApprovalRequest(Body):
     decision: Literal["approve", "reject"]
 
 
-RED_POLICIES = {"heuristic": red.HeuristicRedPolicy, "fixture": red.FixtureRedPolicy}
+RED_POLICIES = {"heuristic": red.HeuristicRedPolicy, "fixture": red.FixtureRedPolicy, "llm": red.LLMRedPolicy}
 
 
-def red_policy_from_env() -> red.FixtureRedPolicy | red.HeuristicRedPolicy:
+def red_policy_from_env(adapter=None):
     name = os.environ.get("SENTINEL_RED", "heuristic")
     if name not in RED_POLICIES:
         raise ValueError(f"SENTINEL_RED={name!r}; expected one of {sorted(RED_POLICIES)}")
+    if name == "llm":
+        if adapter is None:
+            raise ValueError("SENTINEL_RED=llm needs SENTINEL_LLM_MODE=live or replay")
+        return red.LLMRedPolicy(adapter)
     return RED_POLICIES[name]()
 
 
@@ -84,11 +94,11 @@ def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list
 
 def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> FastAPI:
     load_dotenv(dotenv_path=Path.cwd() / '.env', override=False)
-    if red_policy is None:
-        red_policy = red_policy_from_env()
     db_path = db_path or os.environ.get("SENTINEL_DB", "sentinel.db")
     store = Store(db_path)
     adapter = adapter if adapter is not None else from_env(db_path)
+    if red_policy is None:
+        red_policy = red_policy_from_env(adapter)
     executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sentinel")
     slots = BoundedSemaphore(4)  # total admitted background + synchronous steps
     workers = BoundedSemaphore(2)
@@ -257,6 +267,44 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
         fresh = factory.attack_scenario(lab['config'].seed, Split.FINAL_HOLDOUT, 'slow_chain_3',
                                         10_000 + int(run_id.split('-')[1]))
         store.complete_decision(run_id, score(fresh, store.rules(job['lab_id'], version), version))
+
+    @app.post("/labs/{lab_id}/runs/{run_id}/replay-bypass")
+    def replay_bypass_route(lab_id: str, run_id: str, body: ReplayBypassRequest):
+        """Red's bypass re-scored against the run's base rules, base + its patch, or the lab's active rules."""
+        run = store.run(run_id, lab_id)
+        trace = store.bypass_for_run(run_id)
+        if trace is None:
+            raise Conflict("no_bypass", f"run {run_id} has no bypass to replay")
+        base = run["base_version"]
+        if body.rules == "base":
+            return replay_bypass(trace, store.rules(lab_id, base), run_id=run_id, choice="base",
+                                 label=f"Detector v{base}", version=base)
+        if body.rules == "active":
+            active = store.lab(lab_id)["active_version"]
+            return replay_bypass(trace, store.rules(lab_id, active), run_id=run_id, choice="active",
+                                 label=f"Detector v{active}", version=active)
+
+        artifacts = store.run_artifacts(run_id)
+        patch_id = body.patch_id
+        if patch_id is None:   # the latest evaluated patch if there is one, else the run's first valid patch
+            evaluated = [r["patch_id"] for r in artifacts["reports"]]
+            valid = [p["patch"]["patch_id"] for p in artifacts["patches"] if p["valid"]]
+            if evaluated:
+                patch_id = evaluated[-1]
+            elif valid:
+                patch_id = valid[0]
+            else:
+                raise Conflict("no_valid_patch", f"run {run_id} has no valid patch yet; ask Blue for a fix first")
+        patch, error = store.patch(run_id, patch_id)
+        if error:
+            raise Conflict("invalid_patch", error)
+        # Approved candidates carry the version they became; unapproved ones have none.
+        approved = [store.approval(r["report_id"]) for r in artifacts["reports"] if r["patch_id"] == patch_id]
+        version = next((a["version_created"] for a in approved
+                        if a and a["decision"] == "approve" and a["version_created"]), None)
+        label = f"Detector v{version}" if version else f"Detector v{base} + proposed fix"
+        return replay_bypass(trace, apply_patch(store.rules(lab_id, base), patch), run_id=run_id,
+                             choice="candidate", label=label, version=version, patch_id=patch_id)
 
     @app.post("/labs/{lab_id}/approvals")
     def approvals(lab_id: str, body: ApprovalRequest):

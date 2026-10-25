@@ -1,6 +1,9 @@
 import type { World } from "../api";
+import StepCard, { BUTTON_PRIMARY, BUTTON_SECONDARY } from "./StepCard";
 
-export default function SetupCard({ seed, accounts, onSeedChange, onAccountsChange, onCreate, loading, created, world }: {
+const INPUT = "mt-1.5 w-28 rounded-[2px] border border-line bg-page px-3 py-2 text-[15px] tabular-nums text-ink focus:border-lavender focus:outline-none";
+
+export default function SetupCard({ seed, accounts, onSeedChange, onAccountsChange, onCreate, loading, created, world, compact = false }: {
   seed: number;
   accounts: number;
   onSeedChange: (v: number) => void;
@@ -9,33 +12,33 @@ export default function SetupCard({ seed, accounts, onSeedChange, onAccountsChan
   loading: boolean;
   created: boolean;
   world: World | null;
+  compact?: boolean;   // once a round is under way: a quiet card for starting over
 }) {
   return (
-    <section id="step-setup" className="scroll-mt-24 rounded-xl border bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">1. Create a fake bank</h2>
-      <p className="mb-4 mt-0.5 text-sm text-slate-500">Generates a synthetic credit union with normal customer activity.</p>
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="flex flex-col text-sm">
-          Seed
-          <input type="number" value={seed} onChange={(e) => onSeedChange(Number(e.target.value))}
-            className="mt-1 w-28 rounded border px-2 py-1" />
-        </label>
-        <label className="flex flex-col text-sm">
-          Accounts
-          <input type="number" value={accounts} onChange={(e) => onAccountsChange(Number(e.target.value))}
-            className="mt-1 w-28 rounded border px-2 py-1" />
-        </label>
-        <button onClick={onCreate} disabled={loading}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-50">
-          {loading && !created ? "Creating…" : "Create lab"}
-        </button>
-      </div>
+    <StepCard id="step-setup" label={compact ? "Lab" : "Step 1 · Synthetic bank"}
+      title={compact ? undefined : "Create a fake bank"}
+      subtitle={compact ? undefined : "Generates a synthetic credit union with normal customer activity."}>
       {world && (
-        <p className="mt-4 text-sm text-slate-600">
-          Community Credit Union created: <b>{world.accounts}</b> accounts · <b>{world.customers}</b> customers ·{" "}
-          <b>{world.transactions.toLocaleString()}</b> transactions
+        <p className="mb-5 text-[15px] text-muted">
+          Community Credit Union:{" "}
+          <span className="tabular-nums text-ink">{world.accounts.toLocaleString()}</span> accounts ·{" "}
+          <span className="tabular-nums text-ink">{world.customers.toLocaleString()}</span> customers ·{" "}
+          <span className="tabular-nums text-ink">{world.transactions.toLocaleString()}</span> transactions
         </p>
       )}
-    </section>
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="flex flex-col text-sm text-muted">
+          Seed
+          <input type="number" value={seed} onChange={(e) => onSeedChange(Number(e.target.value))} className={INPUT} />
+        </label>
+        <label className="flex flex-col text-sm text-muted">
+          Accounts
+          <input type="number" value={accounts} onChange={(e) => onAccountsChange(Number(e.target.value))} className={INPUT} />
+        </label>
+        <button onClick={onCreate} disabled={loading} className={created ? BUTTON_SECONDARY : BUTTON_PRIMARY}>
+          {loading && !created ? "Creating…" : created ? "Create a new lab" : "Create lab"}
+        </button>
+      </div>
+    </StepCard>
   );
 }

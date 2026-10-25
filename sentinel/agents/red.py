@@ -18,10 +18,20 @@ from sentinel.sim.actions import HORIZON_S, MAX_OPENED_ACCOUNTS
 from sentinel.sim.clock import HOUR, MINUTE, rand_time
 from sentinel.sim.fraud import CASHOUT, SOURCE, Plan
 from sentinel.sim.rng import rng_for
+from sentinel.llm.adapter import AdapterError
 
 FORWARD_PCT = 95   # each mule forwards this much of what it received and keeps the rest
 MAX_SPLIT_GAP_MINUTES = 10   # recipe_to_candidate spaces a hop's splits 2-10 minutes apart
 
+class RedProposal(Model):
+    ''' LLM needs to return 1 to 5 attack recipes '''
+    recipes: list[Recipe] = Field(min_length=1, max_length=5)
+
+    @model_validator(mode='after')
+    def _distinct(self) -> RedProposal:
+        if len(set(self.recipes)) != len(self.recipes):
+            raise ValueError('recipes must be distinct')
+        return self
 
 @dataclass(frozen=True)
 class RedCandidate:
@@ -196,3 +206,65 @@ class HeuristicRedPolicy:
             except ValidationError:
                 pass
         return list(dict.fromkeys(out))        # drop duplicates, keep order (frozen models are hashable)
+
+MAX_TURNS = 4   # matches RedRunRequest.max_turns' upper bound
+
+KNOB_MEANING = {
+    "n_mules": "accounts the money passes through between the source and the cash-out",
+    "hold_hours": "hours each account waits after money arrives before sending it on",
+    "n_splits": "transfers each hop is broken into, sent 2-10 minutes apart (so they land in the same hour)",
+    "new_device": "whether the source account switches to a new device before sending",
+    "funding_cents": "stolen amount deposited into the source; each account keeps 5% before forwarding",
+}
+
+def red_prompt_inputs(objective_cents: int, rules: Sequence[Rule], turn: int,
+                      history: Sequence[Attempt], max_turns: int = MAX_TURNS) -> dict:
+    """Everything the LLM sees for one turn, as plain JSON-able data (it is hashed into the replay key).
+
+    Never forward: ground-truth labels, split names, scenario or template IDs, seeds, holdout data,
+    or the benign world. Red sees the rules it is attacking and what its own past attempts tripped.
+    """
+    knobs = {name: {**{k: v for k, v in spec.items() if k in ("type", "minimum", "maximum")},
+                "meaning": KNOB_MEANING[name]}
+            for name, spec in Recipe.model_json_schema()["properties"].items()}
+    return {
+        "objective_cents": objective_cents,
+        "turn": turn,
+        "max_turns": max_turns,
+        "forward_pct": FORWARD_PCT,
+        "rules": [r.model_dump(mode="json") for r in rules],
+        "history": [a.model_dump(mode="json") for a in history],
+        "knobs": knobs,
+        "constraints": [
+            f"n_mules + n_splits * (n_mules + 1) + (1 if new_device else 0) <= {MAX_ACTIONS}",
+            "(n_mules + 1) * hold_hours, plus up to 10 minutes between splits, must fit in 14 days",
+            f"funding_cents * ({FORWARD_PCT}/100) ** (n_mules + 1) >= objective_cents",
+        ],
+    }
+
+
+class LLMRedPolicy:
+    """Asks the LLM for recipes through Backend 2's adapter; falls back to the heuristic if that fails.
+
+    Same propose() signature as the other policies, so app.py's red-run loop doesn't change.
+    """
+
+    def __init__(self, adapter, fallback=None):
+        self.adapter = adapter
+        self.fallback = fallback or HeuristicRedPolicy()
+
+    def propose(self, *, objective_cents: int, rules: Sequence[Rule], turn: int, history: Sequence[Attempt],
+                seed: int, run_id: str) -> list[RedCandidate]:
+        args = dict(objective_cents=objective_cents, rules=rules, turn=turn, history=history,
+                    seed=seed, run_id=run_id)
+        try:
+            proposal = self.adapter.propose("red", red_prompt_inputs(objective_cents, rules, turn, history),
+                                            RedProposal, prompt_version="red-v1")
+        except AdapterError:
+            return self.fallback.propose(**args)   # LLM down or invalid three times: the demo keeps going
+        tried = {a.recipe for a in history}
+        recipes = [r for r in proposal.recipes if r not in tried and _reaches_objective(r, objective_cents)]
+        if not recipes:
+            return self.fallback.propose(**args)   # nothing new and usable from the LLM this turn
+        return [recipe_to_candidate(r, rng_for(seed, run_id, "red", turn, i))
+                for i, r in enumerate(recipes[:MAX_CANDIDATES])]
