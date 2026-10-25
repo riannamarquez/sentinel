@@ -1,22 +1,8 @@
-'''
-Goal: One module that turns a scored scenario into "how close did each rule come"
-Used by: Red's history (So red can adapt to what caught it)
-    Analyst breakdown
-    Lives in detector folder because it reads rules/features
-        separate from the agents' actions.
+"""Explain a scored scenario: how close each rule that did not fire came to firing (2c).
 
-    '''
-from collections.abc import Sequence
-
-from __future__ import annotations
-
-from pydantic import Field
-
-
-from sentinel.detector.score import diagnose, rules_fired
-from sentinel.schemas import FeatureKey, Model, Operator
-
-"""Explain a scored scenario: how close each rule that did not fire came to firing (2c)."""
+Used by Red's history (so Red can adapt to what caught it) and the analyst breakdown. Lives in
+detector/ because it reads rules and features, separate from the agents' actions.
+"""
 from __future__ import annotations
 
 from collections.abc import Sequence
