@@ -1,0 +1,122 @@
+{
+  "report_id": "rep-000001",
+  "run_id": "run-000001",
+  "baseline_version": 1,
+  "candidate_version": 2,
+  "attacks": {
+    "total": 48,
+    "caught_before": 8,
+    "caught": 32,
+    "missed": 16
+  },
+  "patterns": [
+    {
+      "pattern": "fast_ring",
+      "label": "Fast mule ring",
+      "total": 8,
+      "caught_before": 8,
+      "caught": 8,
+      "missed": 0,
+      "why_missed": []
+    },
+    {
+      "pattern": "slow_chain_3",
+      "label": "Slow three-mule chain",
+      "total": 8,
+      "caught_before": 0,
+      "caught": 8,
+      "missed": 0,
+      "why_missed": []
+    },
+    {
+      "pattern": "slow_split",
+      "label": "Split into two branches",
+      "total": 8,
+      "caught_before": 0,
+      "caught": 8,
+      "missed": 0,
+      "why_missed": []
+    },
+    {
+      "pattern": "slow_small_new_device",
+      "label": "Small sums, new device",
+      "total": 8,
+      "caught_before": 0,
+      "caught": 8,
+      "missed": 0,
+      "why_missed": []
+    },
+    {
+      "pattern": "slow_long_hold",
+      "label": "Long hold at one mule",
+      "total": 8,
+      "caught_before": 0,
+      "caught": 0,
+      "missed": 8,
+      "why_missed": [
+        {
+          "rule_id": "R4",
+          "reason": "hop count reached 3; rule needs ≥ 4",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "pattern": "short_chain",
+      "label": "Single-mule chain",
+      "total": 8,
+      "caught_before": 0,
+      "caught": 0,
+      "missed": 8,
+      "why_missed": [
+        {
+          "rule_id": "R4",
+          "reason": "hop count reached 3; rule needs ≥ 4",
+          "count": 8
+        }
+      ]
+    }
+  ],
+  "false_alarms": {
+    "benign_total": 500,
+    "flagged_before": 49,
+    "flagged": 49,
+    "by_customer_type": [
+      {
+        "segment": "small_business",
+        "label": "Small businesses",
+        "total": 125,
+        "flagged_before": 49,
+        "flagged": 49,
+        "by_rule": {
+          "R1": 38,
+          "R3": 11
+        }
+      },
+      {
+        "segment": "salaried",
+        "label": "Salaried workers",
+        "total": 125,
+        "flagged_before": 0,
+        "flagged": 0,
+        "by_rule": {}
+      },
+      {
+        "segment": "gig",
+        "label": "Gig workers",
+        "total": 125,
+        "flagged_before": 0,
+        "flagged": 0,
+        "by_rule": {}
+      },
+      {
+        "segment": "student",
+        "label": "Students",
+        "total": 125,
+        "flagged_before": 0,
+        "flagged": 0,
+        "by_rule": {}
+      }
+    ]
+  }
+}
