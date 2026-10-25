@@ -51,7 +51,7 @@ export type RulePatch = {
 export type PatchResult = { patch: RulePatch; valid: boolean; error: string | null };
 export type PatchRun = { state: string; patches: PatchResult[] };
 export type Confusion = { tp: number; fp: number; tn: number; fn: number };
-export type GateResult = { name: string; passed: boolean; detail: string };
+export type GateResult = { name: string; passed: boolean; detail: string; numerator: number; denominator: number; threshold: number };
 export type EvaluationReport = {
   report_id: string;
   patch_id: string;
@@ -73,6 +73,17 @@ export type Approval = {
   completion_pending: boolean;   // the decision is saved but the rechallenge hasn't run yet
   rechallenge: Rechallenge | null;
 };
+export type AuditEvent = {
+  event_id: string;
+  seq: number;
+  timestamp: number;            // wall-clock seconds
+  actor: string;
+  action: string;
+  version_before: number | null;
+  version_after: number | null;
+};
+// GET /runs/{run_id}: the run's state and its append-only audit events.
+export type RunRecord = { run_id: string; state: string; events: AuditEvent[]; rechallenge: Rechallenge | null };
 export type ReplayChoice = "base" | "candidate" | "active";
 export type HopReplay = { hop_index: number; transaction_id: string; scored: boolean; alerted: boolean; rule_ids: string[] };
 // Red's bypass re-scored by the backend against a chosen rule set; the frontend never scores rules itself.
@@ -173,8 +184,12 @@ export function replayBypass(labId: string, runId: string, rules: ReplayChoice):
   return request(`/labs/${labId}/runs/${runId}/replay-bypass`, { rules });
 }
 
+export function getRun(runId: string): Promise<RunRecord> {
+  return request(`/runs/${runId}`, undefined, "GET");
+}
+
 export async function getRechallenge(runId: string): Promise<Rechallenge | null> {
-  return (await request(`/runs/${runId}`, undefined, "GET")).rechallenge ?? null;
+  return (await getRun(runId)).rechallenge ?? null;
 }
 
 export async function proposePatches(labId: string, runId: string, bypassId: string): Promise<PatchRun> {

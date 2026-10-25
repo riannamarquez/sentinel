@@ -1,4 +1,6 @@
-// The one red banner every failed step uses, with a button that re-runs that step.
+import { BUTTON_SECONDARY } from "./StepCard";
+
+// The one error banner every failed step uses, with a button that re-runs that step.
 export default function ErrorBanner({ message, detail, onRetry, loading }: {
   message: string;
   detail: string | null;
@@ -6,17 +8,16 @@ export default function ErrorBanner({ message, detail, onRetry, loading }: {
   loading: boolean;
 }) {
   return (
-    <div role="alert" className="flex items-start justify-between gap-4 rounded-xl border-2 border-red-300 bg-red-50 p-4">
+    <div role="alert" className="flex items-start justify-between gap-4 rounded-[3px] border border-coral/50 border-l-2 border-l-coral bg-red-panel p-5">
       <div className="min-w-0">
-        <p className="font-semibold text-red-900">
+        <p className="text-[15px] text-coral">
           {/* `backticked` text in a message renders as code */}
           {message.split("`").map((part, i) =>
-            i % 2 ? <code key={i} className="rounded bg-red-100 px-1 font-mono">{part}</code> : part)}
+            i % 2 ? <code key={i} className="rounded-[2px] bg-page px-1 font-mono text-sm">{part}</code> : part)}
         </p>
-        {detail && <p className="mt-1 break-words text-sm text-red-800">{detail}</p>}
+        {detail && <p className="mt-1 break-words text-sm text-muted">{detail}</p>}
       </div>
-      <button onClick={onRetry} disabled={loading}
-        className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-50">
+      <button onClick={onRetry} disabled={loading} className={BUTTON_SECONDARY}>
         {loading ? "Retrying…" : "Try again"}
       </button>
     </div>

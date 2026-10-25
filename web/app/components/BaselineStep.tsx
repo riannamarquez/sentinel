@@ -1,5 +1,5 @@
 import type { BaselineResult } from "../api";
-import StepCard from "./StepCard";
+import StepCard, { BUTTON_PRIMARY, Chip } from "./StepCard";
 
 // Plain-English names for the three example cases the backend scores.
 const CASES: Record<string, { label: string; isFraud: boolean; blurb: string }> = {
@@ -19,30 +19,22 @@ export default function BaselineStep({ results, onRun, loading }: {
   loading: boolean;
 }) {
   return (
-    <StepCard id="step-baseline" title="2. Test the current fraud rules"
-      subtitle="Checks three known cases against today's fraud rules." action={
-      <button onClick={onRun} disabled={loading}
-        className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-50">
-        Run baseline
-      </button>
-    }>
+    <StepCard id="step-baseline" label="Step 2 · Baseline" title="Test the current fraud rules"
+      subtitle="Checks three known cases against today's fraud rules."
+      action={!results && <button onClick={onRun} disabled={loading} className={BUTTON_PRIMARY}>Run baseline</button>}>
       {results && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           {results.map((r) => {
             const info = caseInfo(r.scenario_id);
             const good = info.isFraud ? r.alert : !r.alert;
             const badge = info.isFraud ? (r.alert ? "Caught" : "Missed") : r.alert ? "False alarm" : "Not flagged";
             return (
-              <div key={r.scenario_id}
-                className={`rounded-lg border-2 p-4 ${good ? "border-emerald-300 bg-emerald-50" : "border-red-300 bg-red-50"}`}>
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-semibold">{info.label}</h3>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${good ? "bg-emerald-200 text-emerald-900" : "bg-red-200 text-red-900"}`}>
-                    {good ? "✓" : "✗"} {badge}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-600">{info.blurb}</p>
-                <p className="mt-2 text-xs text-slate-500">
+              <div key={r.scenario_id} className={`rounded-[2px] border border-line border-l-2 p-4 ${
+                good ? "border-l-mint bg-green-panel/60" : "border-l-coral bg-red-panel/70"}`}>
+                <div className="mb-2"><Chip tone={good ? "mint" : "coral"}>{good ? "✓" : "✗"} {badge}</Chip></div>
+                <h3 className="text-[17px] text-ink">{info.label}</h3>
+                <p className="mt-1 text-sm leading-snug text-muted">{info.blurb}</p>
+                <p className="mt-2 text-xs text-muted">
                   Rules triggered: {r.triggered_rule_ids.length ? r.triggered_rule_ids.join(", ") : "none"}
                 </p>
               </div>
