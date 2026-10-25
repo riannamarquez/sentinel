@@ -209,6 +209,13 @@ class HeuristicRedPolicy:
 
 MAX_TURNS = 4   # matches RedRunRequest.max_turns' upper bound
 
+KNOB_MEANING = {
+    "n_mules": "accounts the money passes through between the source and the cash-out",
+    "hold_hours": "hours each account waits after money arrives before sending it on",
+    "n_splits": "transfers each hop is broken into, sent 2-10 minutes apart (so they land in the same hour)",
+    "new_device": "whether the source account switches to a new device before sending",
+    "funding_cents": "stolen amount deposited into the source; each account keeps 5% before forwarding",
+}
 
 def red_prompt_inputs(objective_cents: int, rules: Sequence[Rule], turn: int,
                       history: Sequence[Attempt], max_turns: int = MAX_TURNS) -> dict:
@@ -217,8 +224,9 @@ def red_prompt_inputs(objective_cents: int, rules: Sequence[Rule], turn: int,
     Never forward: ground-truth labels, split names, scenario or template IDs, seeds, holdout data,
     or the benign world. Red sees the rules it is attacking and what its own past attempts tripped.
     """
-    knobs = {name: {k: v for k, v in spec.items() if k in ("type", "minimum", "maximum")}
-             for name, spec in Recipe.model_json_schema()["properties"].items()}
+    knobs = {name: {**{k: v for k, v in spec.items() if k in ("type", "minimum", "maximum")},
+                "meaning": KNOB_MEANING[name]}
+            for name, spec in Recipe.model_json_schema()["properties"].items()}
     return {
         "objective_cents": objective_cents,
         "turn": turn,
