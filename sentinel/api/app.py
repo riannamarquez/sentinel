@@ -18,6 +18,7 @@ from sentinel.api.states import InvalidTransition, RunState
 from sentinel.api.store import Conflict, NotFound, Store
 from sentinel.api.timeline import Timeline, build_timeline
 from sentinel.detector.baseline import BASELINE_V1
+from sentinel.detector.explain import near_misses
 from sentinel.detector.patches import PatchError, apply_patch
 from sentinel.detector.score import diagnose, rules_fired, score
 from sentinel.eval.evaluator import evaluate
@@ -152,7 +153,7 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
             # rules_fired, not score().triggered_rule_ids: score() stops at the first alert and hides the rest.
             # Dropped candidates never get here, so they can't pose as a bypass with no rules fired.
             attempts = [red.Attempt(turn=turn, recipe=c.recipe, rules_fired=sorted(rules_fired(s, rules)),
-                                    moved_cents=moved_out_cents(s))
+                                    moved_cents=moved_out_cents(s), near_misses=near_misses(s, rules))
                         for s, c in zip(valid, valid_candidates) if c.recipe is not None]
             history.extend(attempts)
             store.transition(run_id, S.MEASURE_OUTCOME, out={"bypasses": len(bypasses), "attempts": attempts})

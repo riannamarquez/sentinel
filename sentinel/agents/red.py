@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from pydantic import Field, ValidationError, model_validator
 
+from sentinel.detector.explain import NearMiss
 from sentinel.fixtures import load_bypass_trace
 from sentinel.features.registry import resolved_params
 from sentinel.schemas import MAX_ACTIONS, Cents, Condition, Model, Rule, SimulationAction
@@ -106,6 +107,7 @@ class Attempt(Model):
     recipe: Recipe
     rules_fired: list[str]
     moved_cents: Cents
+    near_misses: list[NearMiss] = Field(default_factory=list)
 
 
 class FixtureRedPolicy:
