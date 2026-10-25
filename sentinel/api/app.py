@@ -1,4 +1,4 @@
-"""Walking-skeleton API (design-v2 §7). Agents are fixture stubs; steps run synchronously.
+"""Sentinel API (design-v2 §7). Blue supports live/fixture/replay and background execution.
 
 Run: make run   (or: uvicorn --factory sentinel.api.app:create_app). The database path comes from
 SENTINEL_DB (default ./sentinel.db). SENTINEL_RED picks Red's policy: "heuristic" (default) or "fixture".
@@ -6,15 +6,20 @@ SENTINEL_DB (default ./sentinel.db). SENTINEL_RED picks Red's policy: "heuristic
 from __future__ import annotations
 
 import os
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from threading import BoundedSemaphore
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from sentinel.agents import blue, red
-from sentinel.api.states import InvalidTransition, RunState
+from sentinel.api.states import InvalidTransition, RunState, TERMINAL
 from sentinel.api.store import Conflict, NotFound, Store
 from sentinel.api.timeline import Timeline, build_timeline
 from sentinel.detector.baseline import BASELINE_V1
@@ -23,6 +28,8 @@ from sentinel.detector.patches import PatchError, apply_patch
 from sentinel.detector.score import diagnose, rules_fired, score
 from sentinel.eval.evaluator import evaluate
 from sentinel.fixtures import OBJECTIVE_CENTS, load_golden
+from sentinel.llm.adapter import AdapterError, from_env, proposal_request
+from sentinel.schemas import sha256_of
 from sentinel.scenarios import factory
 from sentinel.schemas import BankConfig, BypassTrace, Cents, Split
 from sentinel.sim.actions import ActionError, apply_actions, moved_out_cents
@@ -73,11 +80,29 @@ def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list
     return factory.build_splits(seed, benign_n, attack_copies)
 
 
-def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
-    red_policy = red_policy or red_policy_from_env()   # an unknown SENTINEL_RED fails here, at startup
-    app = FastAPI(title="Sentinel", version="0.1.0")
-    store = Store(db_path or os.environ.get("SENTINEL_DB", "sentinel.db"))
+def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> FastAPI:
+    red_policy = red_policy or red_policy_from_env() # if sentinel_red fails at start up
+    db_path = db_path or os.environ.get("SENTINEL_DB", "sentinel.db")
+    store = Store(db_path)
+    adapter = adapter if adapter is not None else from_env(db_path)
+    executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sentinel")
+    slots = BoundedSemaphore(4)  # total admitted background + synchronous steps
+    workers = BoundedSemaphore(2)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        store.recover_interrupted()
+        for job in store.pending_completions():
+            try:
+                finish_round(job['run_id'])
+            except Exception:
+                logging.getLogger(__name__).exception('Pending rechallenge will retry on next approval request')
+        yield
+        executor.shutdown(wait=True)
+
+    app = FastAPI(title="Sentinel", version="0.2.0", lifespan=lifespan)
     app.state.store = store
+    app.state.adapter = adapter
 
     @app.exception_handler(NotFound)
     def _not_found(request: Request, exc: NotFound):
@@ -97,7 +122,7 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz():
-        return {"ok": True, "llm": "stubbed", "journal_mode": store.journal_mode()}
+        return {"ok": True, "llm": adapter.mode if adapter else "fixture", "journal_mode": store.journal_mode()}
 
     @app.post("/labs", status_code=201)
     def create_lab(config: BankConfig):
@@ -137,18 +162,18 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
             valid, valid_candidates, dropped = [], [], []
             for i, c in enumerate(candidates):
                 try:
-                    valid.append(apply_actions(
+                    scenario = apply_actions(
                         scenario_id=f"{run_id}.red.t{turn}.c{i}", template_id=c.template_id,
                         seed=derive_seed(lab["config"].seed, run_id, turn, i), split=Split.SEARCH,
                         start_ts=c.start_ts, source_account_id=c.source_account_id,
-                        funding_cents=c.funding_cents, actions=c.actions))
-                    valid_candidates.append(c)
+                        funding_cents=c.funding_cents, actions=c.actions)
+                    valid.append((scenario, c))
                 except ActionError as e:
                     dropped.append({"candidate": i, "reason": str(e)})   # logged and dropped, never repaired
             store.transition(run_id, S.VALIDATE_ACTIONS, out={"valid": len(valid), "dropped": dropped})
-            results = [score(s, rules, version) for s in valid]
+            results = [score(s, rules, version) for s, _ in valid]
             store.transition(run_id, S.RUN_SIMULATION, out=results)
-            bypasses = [(s, c) for s, d, c in zip(valid, results, valid_candidates)
+            bypasses = [(s, c) for (s, c), d in zip(valid, results)
                         if not d.alert and moved_out_cents(s) >= body.objective_cents]
             # rules_fired, not score().triggered_rule_ids: score() stops at the first alert and hides the rest.
             # Dropped candidates never get here, so they can't pose as a bypass with no rules fired.
@@ -170,14 +195,18 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
         return {"run_id": run_id, "state": S.NO_BYPASS_FOUND, "turns": body.max_turns, "bypass": None,
                 "history": [a.model_dump() for a in history]}
 
-    @app.post("/labs/{lab_id}/patches", status_code=201)
-    def patches(lab_id: str, body: PatchRequest):
+    def process_patches(lab_id: str, body: PatchRequest):
         run = store.run(body.run_id, lab_id)
         require_state(run, S.MEASURE_OUTCOME)
         trace = store.bypass(body.bypass_id, body.run_id)
         rules = store.rules(lab_id, run["base_version"])
-        proposed = blue.propose(trace, rules, run["base_version"])[:3]
-        store.transition(body.run_id, S.BLUE_PROPOSES, actor="agent:blue", inp=trace, out=proposed)
+        store.transition(body.run_id, S.BLUE_PROPOSES, actor="agent:blue", inp=trace)
+        try:
+            proposed = (blue.propose(trace, rules, run["base_version"], adapter=adapter) if adapter
+                        else blue.propose(trace, rules, run["base_version"]))
+        except AdapterError:
+            store.transition(body.run_id, S.FAILED, failure="Blue proposal failed; evidence in LLM recording store")
+            raise Conflict("proposal_failed", "Blue proposal failed closed")
         out = []
         for p in proposed:
             error = None
@@ -195,8 +224,7 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
         store.transition(body.run_id, S.VALIDATE_PATCH, out=out)
         return {"run_id": body.run_id, "state": S.VALIDATE_PATCH, "patches": out}
 
-    @app.post("/labs/{lab_id}/evaluations", status_code=201)
-    def evaluations(lab_id: str, body: EvaluationRequest):
+    def process_evaluation(lab_id: str, body: EvaluationRequest):
         run = store.run(body.run_id, lab_id)
         require_state(run, S.VALIDATE_PATCH)
         patch, error = store.patch(body.run_id, body.patch_id)
@@ -215,44 +243,34 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
         store.transition(body.run_id, S.AWAIT_HUMAN, out=report)
         return report
 
-    def finish_round(lab_id: str, run_id: str, decision: str) -> None:
-        """Apply new version / reject -> rechallenge -> complete, for a run still waiting on the human."""
-        if store.run(run_id)["state"] is not S.AWAIT_HUMAN:
+    def finish_round(run_id: str) -> None:
+        jobs = store.pending_completions(run_id)
+        if not jobs:
             return
-        store.transition(run_id, S.APPLY_NEW_VERSION if decision == "approve" else S.REJECT_NO_CHANGE, actor="human")
-        lab = store.lab(lab_id)
-        version = lab["active_version"]
-        # A fresh slow variant the run has never seen, against whichever version is now active.
-        fresh = factory.attack_scenario(lab["config"].seed, Split.FINAL_HOLDOUT, "slow_chain_3",
-                                        10_000 + int(run_id.split("-")[1]))
-        result = score(fresh, store.rules(lab_id, version), version)
-        store.save_rechallenge(run_id, result)
-        store.transition(run_id, S.RECHALLENGE, out=result)
-        store.transition(run_id, S.COMPLETE)
+        job = jobs[0]
+        lab = store.lab(job['lab_id'])
+        version = job['detector_version']
+        fresh = factory.attack_scenario(lab['config'].seed, Split.FINAL_HOLDOUT, 'slow_chain_3',
+                                        10_000 + int(run_id.split('-')[1]))
+        store.complete_decision(run_id, score(fresh, store.rules(job['lab_id'], version), version))
 
     @app.post("/labs/{lab_id}/approvals")
     def approvals(lab_id: str, body: ApprovalRequest):
         report = store.report(body.report_id)
         run = store.run(report.run_id, lab_id)
-        previous = store.approval(body.report_id)
-        if previous:
-            if previous["decision"] != body.decision:
-                raise Conflict("already_decided", f"report {body.report_id} was already {previous['decision']}d")
-            finish_round(lab_id, run["run_id"], body.decision)   # idempotent retry
-            result = {k: previous[k] for k in ("decision", "version_created", "event_id")}
-        else:
-            require_state(run, S.AWAIT_HUMAN)
-            new_rules = None
-            if body.decision == "approve":
-                if not report.eligible_for_approval:
-                    failed = [g.name for g in report.gate_results if not g.passed]
-                    raise Conflict("gates_failed", f"failed gates: {failed}")
-                patch, _ = store.patch(run["run_id"], report.patch_id)
-                new_rules = apply_patch(store.rules(lab_id, report.baseline_version), patch)
-            result = store.decide(lab_id, report, body.decision, new_rules)
-            finish_round(lab_id, run["run_id"], body.decision)
-        return {**result, "run_id": run["run_id"], "active_version": store.lab(lab_id)["active_version"],
-                "rechallenge": store.rechallenge(run["run_id"])}
+        new_rules = None
+        if body.decision == 'approve':
+            patch, _ = store.patch(run['run_id'], report.patch_id)
+            new_rules = apply_patch(store.rules(lab_id, report.baseline_version), patch)
+        result = store.decide(lab_id, report, body.decision, new_rules)
+        try:
+            finish_round(run['run_id'])
+        except Exception:
+            # The decision is already durable. Report pending completion honestly.
+            logging.getLogger(__name__).exception('Rechallenge pending for %s', run['run_id'])
+        return {**result, 'run_id': run['run_id'], 'active_version': store.lab(lab_id)['active_version'],
+                'completion_pending': bool(store.pending_completions(run['run_id'])),
+                'rechallenge': store.rechallenge(run['run_id'])}
 
     @app.get("/labs/{lab_id}/reports")
     def reports(lab_id: str):
@@ -274,7 +292,139 @@ def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
     @app.get("/runs/{run_id}")
     def get_run(run_id: str):
         run = store.run(run_id)
-        return {**run, "events": store.audit_events(run_id=run_id), "rechallenge": store.rechallenge(run_id)}
+        return {**run, **store.run_artifacts(run_id), "events": store.audit_events(run_id=run_id),
+                "rechallenge": store.rechallenge(run_id)}
+
+    def claim_step(run_id, expected_state):
+        if not slots.acquire(blocking=False):
+            raise HTTPException(status_code=503, headers={'Retry-After': '1'},
+                                detail={'reason': 'queue_full', 'detail': 'retry when a worker slot is available'})
+        try:
+            if not store.claim_job(run_id, expected_state):
+                raise Conflict('step_running', 'a step is already running for this run')
+        except Exception:
+            slots.release()
+            raise
+
+    def submit(run_id, fn, *args):
+        claim_step(run_id, S.MEASURE_OUTCOME if fn == process_patches else S.VALIDATE_PATCH)
+        def work():
+            try:
+                with workers:
+                    fn(*args)
+            except Exception:
+                current = store.run(run_id)["state"]
+                if current not in TERMINAL:
+                    store.transition(run_id, S.FAILED, failure="step failed; no detector version applied")
+            finally:
+                store.release_job(run_id)
+                slots.release()
+        try:
+            executor.submit(work)
+        except RuntimeError:
+            store.release_job(run_id)
+            slots.release()
+            raise Conflict('server_stopping')
+        return JSONResponse(status_code=202, content={"run_id": run_id, "events_url": f"/runs/{run_id}/events"})
+
+    @app.post("/labs/{lab_id}/patches", status_code=201)
+    def patches(lab_id: str, body: PatchRequest, background: bool = False):
+        require_state(store.run(body.run_id, lab_id), S.MEASURE_OUTCOME)
+        store.bypass(body.bypass_id, body.run_id)
+        if background:
+            return submit(body.run_id, process_patches, lab_id, body)
+        claim_step(body.run_id, S.MEASURE_OUTCOME)
+        try:
+            with workers:
+                return process_patches(lab_id, body)
+        except Exception:
+            if store.run(body.run_id)['state'] == S.BLUE_PROPOSES:
+                store.transition(body.run_id, S.FAILED, failure='Blue proposal failed closed')
+            raise
+        finally:
+            store.release_job(body.run_id)
+            slots.release()
+
+    @app.post("/labs/{lab_id}/evaluations", status_code=201)
+    def evaluations(lab_id: str, body: EvaluationRequest, background: bool = False):
+        require_state(store.run(body.run_id, lab_id), S.VALIDATE_PATCH)
+        _, error = store.patch(body.run_id, body.patch_id)
+        if error:
+            raise Conflict("invalid_patch", error)
+        if background:
+            return submit(body.run_id, process_evaluation, lab_id, body)
+        claim_step(body.run_id, S.VALIDATE_PATCH)
+        try:
+            with workers:
+                return process_evaluation(lab_id, body)
+        except Exception:
+            if store.run(body.run_id)["state"] in {S.EVALUATE_HOLDOUTS, S.APPLY_GATES}:
+                store.transition(body.run_id, S.FAILED, failure="evaluation failed closed")
+            raise
+        finally:
+            store.release_job(body.run_id)
+            slots.release()
+
+    @app.get("/runs/{run_id}/events")
+    async def events(run_id: str, request: Request):
+        store.run(run_id)
+        try:
+            after = int(request.headers.get("last-event-id", "0"))
+            if after < 0:
+                raise ValueError()
+        except ValueError:
+            return JSONResponse(status_code=400, content={"reason": "invalid_event_id"})
+
+        async def stream():
+            cursor = after
+            while not await request.is_disconnected():
+                for event in store.audit_events(run_id=run_id):
+                    if event.seq > cursor:
+                        yield f"id: {event.seq}\nevent: state\ndata: {event.model_dump_json()}\n\n"
+                        cursor = event.seq
+                state = store.run(run_id)["state"]
+                if state in TERMINAL or (state in {S.AWAIT_HUMAN, S.MEASURE_OUTCOME, S.VALIDATE_PATCH}
+                                         and not store.job_running(run_id)):
+                    # A worker can commit its last event between our poll and state read.
+                    for event in store.audit_events(run_id=run_id):
+                        if event.seq > cursor:
+                            yield f"id: {event.seq}\nevent: state\ndata: {event.model_dump_json()}\n\n"
+                            cursor = event.seq
+                    return
+                yield ": heartbeat\n\n"
+                await asyncio.sleep(0.2)
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.get("/labs/{lab_id}/replay")
+    def replay(lab_id: str):
+        bundle = store.export_lab(lab_id)
+        bundle["llm_mode"] = adapter.mode if adapter else "fixture"
+        if adapter:
+            keys = set()
+            for trace_json in bundle["bypasses"]:
+                trace = BypassTrace.model_validate(trace_json)
+                rules = store.rules(lab_id, trace.detector_version)
+                request = proposal_request('blue', blue.prompt_inputs(trace, rules, trace.detector_version),
+                                           blue.BlueProposal, 'blue-v1')
+                request['model'] = adapter.model
+                keys.add(sha256_of(request))
+            bundle["llm_model"] = adapter.model
+            bundle["llm_recordings"] = [r for r in adapter.store.export() if r['input_hash'] in keys]
+        return bundle
+
+    @app.get("/labs/{lab_id}/timeline")
+    def timeline(lab_id: str):
+        lab = store.lab(lab_id)
+        world = generate_world(lab["config"])
+        bundle = store.export_lab(lab_id)
+        txns = {t.transaction_id: t.model_dump(mode="json") for t in world.transactions}
+        for bypass in bundle["bypasses"]:
+            for txn in bypass["scenario"]["transactions"]:
+                txns[txn["transaction_id"]] = txn
+        return {"lab_id": lab_id, "accounts": world.accounts,
+                "transactions": sorted(txns.values(), key=lambda t: (t["timestamp"], t["transaction_id"])),
+                "events": bundle["events"]}
 
     return app
 
