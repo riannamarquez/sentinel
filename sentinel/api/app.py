@@ -117,7 +117,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
         store.transition(run_id, S.BASELINE_SCORE, out=rules)
 
         for turn in range(1, body.max_turns + 1):
-            candidates = red.propose(body.objective_cents, rules, turn)
+            candidates = red.FixtureRedPolicy().propose(objective_cents=body.objective_cents, rules=rules, turn=turn,
+                                                        history=[], seed=lab["config"].seed, run_id=run_id)
             store.transition(run_id, S.RED_PROPOSES, actor="agent:red", turns=turn,
                              out=[c.actions for c in candidates])
             valid, dropped = [], []
