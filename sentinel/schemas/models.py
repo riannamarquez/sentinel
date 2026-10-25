@@ -269,6 +269,31 @@ class RuleDiagnosis(Model):
     conditions: list[ConditionDiagnosis]
 
 
+class HopReplay(Model):
+    """One transfer of a replayed bypass. Only transfers sent from an account the scenario owns are scored."""
+    hop_index: int = Field(ge=1)          # 1-based position in the bypass's time-ordered transactions
+    transaction_id: Id
+    scored: bool
+    alerted: bool                         # at least one rule fires on this transfer
+    rule_ids: list[str]
+
+
+class BypassReplay(Model):
+    """Red's bypass scenario re-scored against a chosen rule set (base, candidate or active)."""
+    run_id: Id
+    bypass_id: Id
+    rules: Literal["base", "candidate", "active"]
+    detector_label: str
+    detector_version: Version | None      # None for a candidate that hasn't been approved
+    patch_id: Id | None = None
+    alert: bool
+    triggered_rule_ids: list[str]
+    first_alert_time: Timestamp | None
+    alert_transaction_id: Id | None
+    alert_hop_index: int | None
+    per_hop: list[HopReplay]
+
+
 class BypassTrace(Model):
     """Red's output: a scenario that moved money without an alert, and why it worked."""
     bypass_id: Id
