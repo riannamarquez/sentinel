@@ -297,6 +297,16 @@ class GateResult(Model):
     detail: str = Field(default="", max_length=500)
 
 
+MissReasonCode = Literal["long_hold", "short_chain", "low_carry", "other"]
+
+
+class MissReason(Model):
+    """One bucket of final-holdout attacks the candidate rules did not flag."""
+    reason: MissReasonCode
+    label: str = Field(max_length=100)
+    count: Count
+
+
 class EvaluationReport(Model):
     report_id: Id
     run_id: Id
@@ -318,6 +328,8 @@ class EvaluationReport(Model):
     gate_pass: bool
     gate_results: list[GateResult]
     eligible_for_approval: bool
+    # Defaults to empty so reports stored before this field existed still load.
+    missed_breakdown: list[MissReason] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def _check(self) -> EvaluationReport:
@@ -325,6 +337,9 @@ class EvaluationReport(Model):
             raise ValueError("gate_pass must equal all(gate_results.passed)")
         if self.eligible_for_approval != self.gate_pass:
             raise ValueError("eligible_for_approval must equal gate_pass")
+        missed = self.candidate_confusion.get(Split.FINAL_HOLDOUT)
+        if self.missed_breakdown and missed and sum(m.count for m in self.missed_breakdown) != missed.fn:
+            raise ValueError("missed_breakdown counts must sum to the missed final-holdout attacks")
         return self
 
 

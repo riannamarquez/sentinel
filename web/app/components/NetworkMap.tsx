@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Approval, Bypass } from "../api";
+import { analyzeChain, attackStory, type AttackChain } from "./attackChain";
 import { dollars } from "./format";
 
 const RED = "#dc2626";
@@ -25,17 +26,6 @@ const Y_STEP = 140;
 
 type HopData = { amount: string; waited: string | null; attack: boolean };
 type HopEdge = Edge<HopData, "hop">;
-
-function accountLabel(id: string) {
-  if (id === "SRC") return "Source account";
-  const mule = id.match(/^M(\d+)$/);
-  if (mule) return `Mule ${mule[1]}`;
-  if (id.startsWith("EXT-")) {
-    const name = id.slice(4).replace(/[-_]/g, " ");
-    return `${name.charAt(0).toUpperCase()}${name.slice(1)} (outside)`;
-  }
-  return id;
-}
 
 function waitedLabel(seconds: number) {
   const hours = seconds / 3600;
@@ -63,23 +53,16 @@ function HopEdgeView({ id, sourceX, sourceY, targetX, targetY, data, markerEnd }
 
 const edgeTypes = { hop: HopEdgeView };
 
-function buildGraph(bypass: Bypass) {
-  const txs = [...bypass.scenario.transactions].sort((a, b) => a.timestamp - b.timestamp);
-  const attackAccounts = new Set(
-    txs.filter((t) => t.ground_truth_label === "malicious").flatMap((t) => [t.from_id, t.to_id]),
-  );
-
-  // Accounts in order of first appearance, which is time order.
-  const order: string[] = [];
-  for (const t of txs) for (const id of [t.from_id, t.to_id]) if (!order.includes(id)) order.push(id);
+function buildGraph({ order, owned, labels, hops }: AttackChain) {
+  const attackAccounts = new Set(hops.filter((h) => h.attack).flatMap((h) => [h.from, h.to]));
 
   const nodes: Node[] = order.map((id, i) => {
     const attack = attackAccounts.has(id);
-    const outside = id.startsWith("EXT-");
+    const outside = !owned.has(id);
     return {
       id,
       position: { x: i * X_STEP, y: i * Y_STEP },
-      data: { label: accountLabel(id) },
+      data: { label: labels.get(id) },
       draggable: false,
       selectable: false,
       style: {
@@ -94,60 +77,62 @@ function buildGraph(bypass: Bypass) {
     };
   });
 
-  // "Waited" is the time since the money last arrived in the sending account.
-  const edges: HopEdge[] = txs.map((t, i) => {
-    const inflow = txs.slice(0, i).findLast((p) => p.to_id === t.from_id);
-    const attack = t.ground_truth_label === "malicious";
-    return {
-      id: t.transaction_id,
-      source: t.from_id,
-      target: t.to_id,
-      type: "hop",
-      markerEnd: { type: MarkerType.ArrowClosed, color: attack ? RED : GRAY, width: 18, height: 18 },
-      data: {
-        amount: dollars(Math.round(t.amount_cents / 100) * 100),
-        waited: inflow ? waitedLabel(t.timestamp - inflow.timestamp) : null,
-        attack,
-      },
-    };
-  });
+  // One arrow per hop, so split transfers to the same account don't draw on top of each other.
+  const edges: HopEdge[] = hops.map((h) => ({
+    id: h.key,
+    source: h.from,
+    target: h.to,
+    type: "hop",
+    markerEnd: { type: MarkerType.ArrowClosed, color: h.attack ? RED : GRAY, width: 18, height: 18 },
+    data: {
+      amount: dollars(Math.round(h.totalCents / 100) * 100) + (h.txs.length > 1 ? ` in ${h.txs.length} transfers` : ""),
+      waited: h.waitedSeconds === null ? null : waitedLabel(h.waitedSeconds),
+      attack: h.attack,
+    },
+  }));
 
   return { nodes, edges };
 }
 
-// The rechallenge is a fresh slow-chain attack, not this exact path, so the result is
-// reported under the map rather than drawn onto any hop.
+// The rechallenge is a fresh test attack from the backend, not Red's path, so the result is
+// reported under the map rather than drawn onto any hop, and never called "like this one".
 function RechallengeBanner({ rechallenge }: { rechallenge: NonNullable<Approval["rechallenge"]> }) {
   const fired = rechallenge.triggered_rule_ids.join(", ");
   return rechallenge.alert ? (
     <div className="border-t-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
-      ✓ New rule caught a fresh attack like this one{fired && ` (fired: ${fired})`}
+      ✓ The active rules caught a fresh test attack{fired && ` (fired: ${fired})`}
     </div>
   ) : (
     <div className="border-t-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900">
-      ✗ A fresh attack like this one still got through
+      ✗ A fresh test attack still got through
     </div>
   );
 }
 
-export default function NetworkMap({ bypass, rechallenge }: {
+export default function NetworkMap({ bypass, redRan, rechallenge }: {
   bypass: Bypass | null;
+  redRan: boolean;
   rechallenge: Approval["rechallenge"];
 }) {
   if (!bypass) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-6 text-center">
         <p className="font-semibold text-slate-500">Account network map</p>
-        <p className="mt-1 text-sm text-slate-400">The attack path will appear here.</p>
+        <p className="mt-1 text-sm text-slate-400">
+          {redRan ? "Red didn't find a way past the rules, so there's no attack path to show." : "The attack path will appear here."}
+        </p>
       </div>
     );
   }
 
-  const { nodes, edges } = buildGraph(bypass);
+  const chain = analyzeChain(bypass);
+  const { nodes, edges } = buildGraph(chain);
+  const story = attackStory(chain);
   return (
     <div className="flex h-full flex-col">
       <div className="border-b px-4 py-3">
-        <p className="text-sm font-semibold">Red&apos;s attack path</p>
+        <p className="text-sm font-semibold">How the stolen money moved</p>
+        {story && <p className="mt-1.5 text-sm leading-snug text-slate-700">{story.join(" ")}</p>}
         <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
           <li className="flex items-center gap-1.5">
             <span className="inline-block h-0.5 w-4 bg-red-600" /> stolen money

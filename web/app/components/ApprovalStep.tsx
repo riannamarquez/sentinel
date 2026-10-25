@@ -41,7 +41,7 @@ export default function ApprovalStep({ report, approval, onDecide, loading }: {
           {approval.rechallenge && (
             <div className={`rounded-lg border-2 p-4 ${approval.rechallenge.alert ? "border-emerald-300 bg-emerald-50" : "border-red-300 bg-red-50"}`}>
               <p className="font-semibold">
-                Red tried a brand-new attack it had never used →{" "}
+                A fresh test attack, not one Red used, was run against the active detector →{" "}
                 {approval.rechallenge.alert ? "Caught ✓" : "Missed ✗"}
               </p>
               <p className="mt-1 text-xs text-slate-500">
