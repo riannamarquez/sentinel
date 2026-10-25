@@ -161,7 +161,8 @@ class HeuristicRedPolicy:
 
     def propose(self, *, objective_cents: int, rules: Sequence[Rule], turn: int, history: Sequence[Attempt],
                 seed: int, run_id: str) -> list[RedCandidate]:
-        recipes = [NAIVE] if not history else self._next_recipes(rules, history)
+        tried = {a.recipe for a in history}
+        recipes = [NAIVE] if not history else [r for r in self._next_recipes(rules, history) if r not in tried]
         recipes = [r for r in recipes if _reaches_objective(r, objective_cents)][:MAX_CANDIDATES]
         return [recipe_to_candidate(r, rng_for(seed, run_id, "red", turn, i)) for i, r in enumerate(recipes)]
 
@@ -179,10 +180,12 @@ class HeuristicRedPolicy:
                 if changes is None:
                     continue
                 try:
-                    fixed = fixed.tweak(**changes)
-                    break
+                    tweaked = fixed.tweak(**changes)
                 except ValidationError:
                     continue
+                if tweaked != fixed:           # a fix that changes nothing didn't break this condition
+                    fixed = tweaked
+                    break
 
         out = [fixed]
         for delta in VARIANTS:
