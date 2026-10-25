@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { PatchRun } from "../api";
+import type { BlueSource, PatchRun } from "../api";
 import { describeRule } from "./format";
 import { ruleTitle, specCells } from "./ruleSpec";
 import StepCard, { BUTTON_PRIMARY, Chip } from "./StepCard";
@@ -17,6 +17,8 @@ const CheckIcon = (
     <path d="m3 8.5 3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+const SOURCE_LABEL: Record<BlueSource, string> = { llm_live: "LLM live", llm_replay: "LLM replay", fixture: "fixture" };
 
 export default function BlueStep({ patchRun, selectedPatchId, onAsk, loading }: {
   patchRun: PatchRun | null;
@@ -39,6 +41,9 @@ export default function BlueStep({ patchRun, selectedPatchId, onAsk, loading }: 
   return (
     <StepCard id="step-blue" label="Blue agent proposal" labelTone="lavender" labelIcon={SparkleIcon}
       title={selected ? ruleTitle(selected.patch) : "No valid proposal"}
+      note={patchRun.source && (
+        <div className="mt-3"><Chip tone={patchRun.source === "fixture" ? "muted" : "lavender"}>Blue: {SOURCE_LABEL[patchRun.source]}</Chip></div>
+      )}
       action={selected ? <Chip icon={CheckIcon}>Valid rule</Chip> : <Chip tone="coral">Rejected</Chip>}>
       {patchRun.state === "failed" && (
         <p className="mb-5 rounded-[2px] border-l-2 border-coral bg-red-panel p-4 text-[15px] text-coral">

@@ -1,9 +1,9 @@
-import type { RedRun } from "../api";
+import type { RedRun, TurnSource } from "../api";
 import AttackTimeline from "./AttackTimeline";
 import { analyzeChain } from "./attackChain";
 import { ruleTimeLimits, silenceSentence, timeline, windowFor, type HoldBar } from "./bypassExplain";
 import { FEATURES, formatFeature, OPERATORS } from "./format";
-import StepCard, { BUTTON_ATTACK } from "./StepCard";
+import StepCard, { BUTTON_ATTACK, Chip } from "./StepCard";
 
 const YES_NO_FEATURES = new Set(["new_device_before_transfer"]);
 
@@ -13,6 +13,30 @@ function windowNote(featureKey: string, closest: number, window: number | null, 
   if (featureKey !== "velocity_in_amount" || closest !== 0 || window === null || !bars.length) return null;
   if (!bars.every((b) => b.heldH > window)) return null;
   return `Money arrived more than ${window} h before it left, so the ${window}-hour window never saw both.`;
+}
+
+const POLICY_LABEL: Record<string, string> = {
+  llm: "LLM", heuristic_fallback: "heuristic fallback", heuristic: "heuristic", fixture: "fixture",
+};
+
+// Which policy produced Red's turns, so "is that the LLM?" has an answer on screen.
+export function RedSource({ sources }: { sources: TurnSource[] }) {
+  if (!sources.length) return null;
+  const fallbacks = sources.filter((s) => s.policy === "heuristic_fallback");
+  const policy = fallbacks.length ? "heuristic_fallback" : sources.every((s) => s.policy === "llm") ? "llm" : sources[0].policy;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px] text-muted">
+      <Chip tone={fallbacks.length ? "coral" : policy === "llm" ? "lavender" : "muted"}>
+        Red: {POLICY_LABEL[policy] ?? policy}
+      </Chip>
+      {fallbacks.length > 0 && (
+        <span>
+          {fallbacks.length} of {sources.length} turns fell back:{" "}
+          {fallbacks.map((s) => `turn ${s.turn} (${(s.reason ?? "unknown").replace(/_/g, " ")})`).join(", ")}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // Left column until Red finds a way through: the button, or the "rules held" result.

@@ -124,3 +124,60 @@ def test_env_llm_with_an_adapter_uses_llm_red(tmp_path, monkeypatch):
         lab = client.post("/labs", json=CONFIG).json()["lab_id"]
         assert client.post(f"/labs/{lab}/red-runs", json={}).status_code == 201
     assert any(r["role"] == "red" for r in sent)
+
+# --- which policy produced each turn is recorded, never silent -------------------------
+
+def red_actors(client, run_id):
+    return [e["actor"] for e in client.get(f"/runs/{run_id}").json()["events"] if e["action"] == "enter:red_proposes"]
+
+
+def test_llm_turns_are_labelled_llm_in_response_and_evidence_log(tmp_path):
+    adapter, _ = recording_adapter(tmp_path, lambda r: {"recipes": [recipe()]})
+    with TestClient(create_app(str(tmp_path / "app.db"), red_policy=LLMRedPolicy(adapter), adapter=adapter)) as client:
+        assert client.get("/healthz").json()["red_policy"] == "llm"
+        lab = client.post("/labs", json=CONFIG).json()["lab_id"]
+        run = client.post(f"/labs/{lab}/red-runs", json={}).json()
+        assert run["turn_sources"] == [{"turn": 1, "policy": "llm"}]
+        assert red_actors(client, run["run_id"]) == ["agent:red:llm"]
+
+
+def test_fallback_turns_record_the_reason_and_log_it(tmp_path, caplog):
+    def down(request):
+        raise OSError("provider unreachable")
+    adapter = Adapter(down, ResponseStore(tmp_path / "llm.db"), sleep=lambda _: None)
+    with TestClient(create_app(str(tmp_path / "app.db"), red_policy=LLMRedPolicy(adapter))) as client:
+        lab = client.post("/labs", json=CONFIG).json()["lab_id"]
+        run = client.post(f"/labs/{lab}/red-runs", json={}).json()
+        actors = red_actors(client, run["run_id"])
+    assert all(s["policy"] == "heuristic_fallback" and s["reason"] == "llm_error" for s in run["turn_sources"])
+    assert [s["turn"] for s in run["turn_sources"]] == list(range(1, run["turns"] + 1))
+    assert actors == ["agent:red:heuristic_fallback:llm_error"] * run["turns"]
+    assert "fell back to the heuristic: llm_error" in caplog.text
+
+
+def test_replay_miss_and_repeated_recipes_have_their_own_reasons(tmp_path):
+    from sentinel.llm.adapter import ReplayAdapter
+    miss = red_run(tmp_path, LLMRedPolicy(ReplayAdapter(ResponseStore(tmp_path / "empty.db"))), "miss.db")
+    assert miss["turn_sources"][0]["reason"] == "replay_miss"
+    naive = recipe(hold_hours=1, funding_cents=800_000)
+    adapter, _ = recording_adapter(tmp_path, lambda r: {"recipes": [naive]})
+    repeat = red_run(tmp_path, LLMRedPolicy(adapter), "repeat.db")
+    assert repeat["turn_sources"][0] == {"turn": 1, "policy": "llm"}
+    assert repeat["turn_sources"][1]["reason"] == "no_usable_recipes"
+
+
+def test_default_app_reports_heuristic_red_and_fixture_blue(tmp_path, monkeypatch):
+    for var in ("SENTINEL_RED", "SENTINEL_LLM_MODE"):
+        monkeypatch.delenv(var, raising=False)
+    with TestClient(create_app(str(tmp_path / "app.db"))) as client:
+        health = client.get("/healthz").json()
+        assert (health["llm"], health["red_policy"], health["blue_source"]) == ("fixture", "heuristic", "fixture")
+        lab = client.post("/labs", json=CONFIG).json()["lab_id"]
+        run = client.post(f"/labs/{lab}/red-runs", json={}).json()
+        assert {s["policy"] for s in run["turn_sources"]} == {"heuristic"}
+        patches = client.post(f"/labs/{lab}/patches",
+                              json={"run_id": run["run_id"], "bypass_id": run["bypass"]["bypass_id"]}).json()
+        assert patches["source"] == "fixture"
+        blue = [e["actor"] for e in client.get(f"/runs/{run['run_id']}").json()["events"]
+                if e["action"] == "enter:blue_proposes"]
+        assert blue == ["agent:blue:fixture"]

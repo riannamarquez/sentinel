@@ -10,7 +10,7 @@ import ErrorBanner from "./components/ErrorBanner";
 import EvidenceLog, { formatUtc } from "./components/EvidenceLog";
 import IntroCard, { useIntroDismissed } from "./components/IntroCard";
 import NetworkMap from "./components/NetworkMap";
-import RedStep, { WhyItGotThrough } from "./components/RedStep";
+import RedStep, { RedSource, WhyItGotThrough } from "./components/RedStep";
 import ScorecardStep from "./components/ScorecardStep";
 import SetupCard from "./components/SetupCard";
 import StepCard from "./components/StepCard";
@@ -285,6 +285,7 @@ export default function Home() {
           <div className="grid gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
             {/* Left: Red's finding */}
             <div className="space-y-6">
+              {redRun && <RedSource sources={redRun.turn_sources} />}
               {redRun?.bypass ? (
                 <NetworkMap labId={labId} runId={runId} bypass={redRun.bypass}
                   previous={previousBypasses.at(-1) ?? null} attackNumber={previousBypasses.length + 1} baseRules={redRun.rules}
