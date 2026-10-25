@@ -17,9 +17,10 @@ export default function RedStep({ redRun, onRun, loading }: {
       </button>
     }>
       {redRun && !bypass && (
-        <p className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">
-          Red tried {redRun.turns} times and couldn&apos;t get past the rules.
-        </p>
+        <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
+          <p className="font-semibold">Red tried {redRun.turns} times and couldn&apos;t get past the rules.</p>
+          <p className="mt-1 text-sm">The current rules held, so there&apos;s no gap for Blue to fix this round.</p>
+        </div>
       )}
 
       {redRun && bypass && (

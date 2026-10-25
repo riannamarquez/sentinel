@@ -24,7 +24,7 @@ export type ConditionDiagnosis = {
 };
 export type Bypass = {
   bypass_id: string;
-  scenario: { transactions: Transaction[] };
+  scenario: { transactions: Transaction[]; owned_account_ids: string[] };
   moved_cents: number;
   objective_cents: number;
   why_it_worked: { rule_id: string; conditions: ConditionDiagnosis[] }[];

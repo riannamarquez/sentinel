@@ -166,7 +166,7 @@ export default function Home() {
         {/* Left: network map */}
         <aside className="xl:sticky xl:top-24 xl:self-start">
           <div className={`h-[32rem] overflow-hidden rounded-xl bg-white xl:h-[calc(100vh-7.5rem)] ${redRun?.bypass ? "border shadow-sm" : "border-2 border-dashed border-slate-300"}`}>
-            <NetworkMap bypass={redRun?.bypass ?? null} rechallenge={approval?.rechallenge ?? null} />
+            <NetworkMap bypass={redRun?.bypass ?? null} redRan={!!redRun} rechallenge={approval?.rechallenge ?? null} />
           </div>
         </aside>
 
