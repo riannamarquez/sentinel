@@ -28,9 +28,12 @@ export type Bypass = {
   moved_cents: number;
   objective_cents: number;
   why_it_worked: { rule_id: string; conditions: ConditionDiagnosis[] }[];
+  detector_version: number;
   rationale: string;
 };
-export type RedRun = { run_id: string; turns: number; bypass: Bypass | null };
+// `rules` is the detector version Red attacked (bypass.detector_version), read from the lab.
+export type RedRun = { run_id: string; turns: number; bypass: Bypass | null; rules: Rule[] | null };
+export type Rule = { rule_id: string; all_of: Condition[] };
 export type Condition = {
   feature_key: string;
   operator: string;
@@ -96,10 +99,11 @@ function detailText(detail: unknown): string | null {
   return null;
 }
 
-async function request(path: string, body?: unknown) {
+// POSTs `body` (or nothing) to the backend; method "GET" sends no body.
+async function request(path: string, body?: unknown, method: "GET" | "POST" = "POST") {
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, body === undefined ? { method: "POST" } : {
+    res = await fetch(`/api${path}`, body === undefined ? { method } : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -128,7 +132,13 @@ export async function runBaseline(labId: string): Promise<BaselineResult[]> {
 
 export async function startRedRun(labId: string): Promise<RedRun> {
   const data = await request(`/labs/${labId}/red-runs`, {});
-  return { run_id: data.run_id, turns: data.turns, bypass: data.bypass };
+  const bypass: Bypass | null = data.bypass;
+  let rules: Rule[] | null = null;
+  if (bypass) {
+    const lab = await request(`/labs/${labId}`, undefined, "GET");
+    rules = lab.versions?.find((v: { version: number }) => v.version === bypass.detector_version)?.rules ?? null;
+  }
+  return { run_id: data.run_id, turns: data.turns, bypass, rules };
 }
 
 export async function proposePatches(labId: string, runId: string, bypassId: string): Promise<PatchRun> {
