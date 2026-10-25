@@ -11,7 +11,17 @@ export default function BlueStep({ patchRun, onAsk, loading }: {
 }) {
   return (
     <StepCard id="step-blue" title="4. Ask Blue to close the gap"
-      subtitle="Blue proposes a rule change to close the gap Red found." action={
+      subtitle="Blue proposes a rule change to close the gap Red found."
+      note={
+        // Blue's only inputs are Red's bypass trace and the current rules (blue.propose in sentinel/api/app.py).
+        <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-500">
+          <svg aria-hidden="true" viewBox="0 0 16 16" className="mt-px h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M8 7.25v4M8 4.75v.01" strokeLinecap="round" />
+          </svg>
+          <span>What Blue can see: Red&apos;s attack path and the current rules — not other banks&apos; accounts, and not the hidden test data.</span>
+        </p>
+      } action={
       <button onClick={onAsk} disabled={loading}
         className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50">
         Ask Blue for a fix
