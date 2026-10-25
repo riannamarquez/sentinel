@@ -1,0 +1,457 @@
+{
+  "tool": "Sentinel purple-team loop",
+  "target": "http://localhost:3000",
+  "mode": "replay",
+  "started_at": "2026-10-24T23:10:54",
+  "juice_shop_version": null,
+  "findings": [
+    {
+      "id": "sqli-login-bypass",
+      "title": "SQL injection authentication bypass",
+      "category": "A03:2021 Injection",
+      "severity": "critical",
+      "summary": "Logged in as the first registered user (admin) by injecting `' OR 1=1--` into the email field, bypassing the password check.",
+      "evidence": {
+        "method": "POST",
+        "path": "/rest/user/login",
+        "body": {
+          "email": "' OR 1=1--",
+          "password": "anything"
+        },
+        "request_headers": {},
+        "status_code": 200,
+        "response_excerpt": "{\"authentication\":{\"token\":\"eyJ...\",\"bid\":1}}"
+      },
+      "confirmed": true,
+      "discovered_at": 1792908654.570737
+    },
+    {
+      "id": "sqli-search-error-leak",
+      "title": "SQL injection & verbose error leak in product search",
+      "category": "A03:2021 Injection",
+      "severity": "high",
+      "summary": "The /rest/products/search endpoint concatenates the `q` param into SQL and returns the raw SQLite error, confirming injection.",
+      "evidence": {
+        "method": "GET",
+        "path": "/rest/products/search?q='",
+        "body": null,
+        "request_headers": {},
+        "status_code": 500,
+        "response_excerpt": "SQLITE_ERROR: unrecognized token near ..."
+      },
+      "confirmed": true,
+      "discovered_at": 1792908654.5707414
+    },
+    {
+      "id": "confidential-document-exposure",
+      "title": "Confidential document exposed via static file route",
+      "category": "A01:2021 Broken Access Control",
+      "severity": "high",
+      "summary": "Retrieved an internal confidential document from /ftp with no authentication or authorisation required.",
+      "evidence": {
+        "method": "GET",
+        "path": "/ftp/acquisitions.md",
+        "body": null,
+        "request_headers": {},
+        "status_code": 200,
+        "response_excerpt": "# Acquisition Of ... (confidential)"
+      },
+      "confirmed": true,
+      "discovered_at": 1792908654.570743
+    },
+    {
+      "id": "missing-security-headers",
+      "title": "Missing HTTP security headers",
+      "category": "A05:2021 Security Misconfiguration",
+      "severity": "medium",
+      "summary": "Response is served without Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options.",
+      "evidence": {
+        "method": "GET",
+        "path": "/",
+        "body": null,
+        "request_headers": {},
+        "status_code": 200,
+        "response_excerpt": "missing: Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options"
+      },
+      "confirmed": true,
+      "discovered_at": 1792908654.5707445
+    },
+    {
+      "id": "version-disclosure",
+      "title": "Application version disclosure",
+      "category": "A06:2021 Vulnerable & Outdated Components",
+      "severity": "low",
+      "summary": "An unauthenticated endpoint returns the exact application version, letting an attacker match it to known CVEs.",
+      "evidence": {
+        "method": "GET",
+        "path": "/rest/admin/application-version",
+        "body": null,
+        "request_headers": {},
+        "status_code": 200,
+        "response_excerpt": "{\"version\":\"20.2.0\"}"
+      },
+      "confirmed": true,
+      "discovered_at": 1792908654.5707457
+    }
+  ],
+  "remediations": [
+    {
+      "finding_id": "sqli-login-bypass",
+      "title": "Parameterise the login query",
+      "rationale": "The bypass works because user input is concatenated into SQL. Parameterised queries send the input as data, never as code, so `' OR 1=1--` is treated as a (nonexistent) email, not as syntax.",
+      "code_fix_before": "const q = `SELECT * FROM Users WHERE email = '${req.body.email}' AND password = '${hash(req.body.password)}'`;\ndb.exec(q);",
+      "code_fix_after": "db.get(\n  'SELECT * FROM Users WHERE email = ? AND password = ?',\n  [req.body.email, hash(req.body.password)]\n);",
+      "rule_name": "sql-injection-filter",
+      "blocks": true
+    },
+    {
+      "finding_id": "sqli-search-error-leak",
+      "title": "Parameterise search + return a generic error",
+      "rationale": "Two fixes: bind the query parameter so the quote can't break the SQL, and replace the raw DB error with a generic 400 so the engine and schema aren't leaked to the client.",
+      "code_fix_before": "const q = `SELECT * FROM Products WHERE name LIKE '%${req.query.q}%'`;\n// ... catch (e) { res.status(500).send(e.toString()); }",
+      "code_fix_after": "db.all('SELECT * FROM Products WHERE name LIKE ?', [`%${q}%`])\n// ... catch (e) { log.error(e); res.status(400).json({error:'Invalid query'}); }",
+      "rule_name": "sql-injection-filter",
+      "blocks": true
+    },
+    {
+      "finding_id": "confidential-document-exposure",
+      "title": "Gate the /ftp route behind auth + an allow-list",
+      "rationale": "Static internal files are served with no check. Require authentication for the route and only serve an explicit allow-list of public file types.",
+      "code_fix_before": "app.use('/ftp', express.static('ftp'));",
+      "code_fix_after": "app.use('/ftp', requireAuth, serveAllowList(['.pdf']),\n               express.static('ftp'));",
+      "rule_name": "ftp-path-guard",
+      "blocks": true
+    },
+    {
+      "finding_id": "missing-security-headers",
+      "title": "Add Helmet security headers",
+      "rationale": "A single middleware sets Content-Security-Policy, X-Frame-Options, HSTS and X-Content-Type-Options \u2014 closing off XSS, clickjacking and downgrade attacks at once.",
+      "code_fix_before": "// no security-header middleware configured",
+      "code_fix_after": "import helmet from 'helmet';\napp.use(helmet({\n  contentSecurityPolicy: { directives: { defaultSrc: [\"'self'\"] } }\n}));",
+      "rule_name": "security-headers-injector",
+      "blocks": true
+    },
+    {
+      "finding_id": "version-disclosure",
+      "title": "Stop publishing the exact version",
+      "rationale": "Fingerprinting the version maps the app to known CVEs. Remove the public version endpoint (or return a static build id) and patch on a schedule rather than relying on obscurity.",
+      "code_fix_before": "app.get('/rest/admin/application-version',\n        (req,res) => res.json({ version: pkg.version }));",
+      "code_fix_after": "// endpoint removed from public surface; version tracked internally\n// in the SBOM / dependency scanner, not exposed to clients",
+      "rule_name": "version-redactor",
+      "blocks": true
+    }
+  ],
+  "verification": {
+    "before": {
+      "open": 5,
+      "by_severity": {
+        "critical": 1,
+        "high": 2,
+        "medium": 1,
+        "low": 1
+      }
+    },
+    "after": {
+      "open": 0,
+      "mitigated": [
+        {
+          "finding_id": "sqli-login-bypass",
+          "rule": "sql-injection-filter",
+          "severity": "critical"
+        },
+        {
+          "finding_id": "sqli-search-error-leak",
+          "rule": "sql-injection-filter",
+          "severity": "high"
+        },
+        {
+          "finding_id": "confidential-document-exposure",
+          "rule": "ftp-path-guard",
+          "severity": "high"
+        },
+        {
+          "finding_id": "missing-security-headers",
+          "rule": "security-headers-injector",
+          "severity": "medium"
+        },
+        {
+          "finding_id": "version-disclosure",
+          "rule": "version-redactor",
+          "severity": "low"
+        }
+      ],
+      "residual": []
+    }
+  },
+  "timeline": [
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "recon",
+      "data": {
+        "target": "http://localhost:3000",
+        "mode": "replay"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "finding",
+      "data": {
+        "id": "sqli-login-bypass",
+        "title": "SQL injection authentication bypass",
+        "category": "A03:2021 Injection",
+        "severity": "critical",
+        "summary": "Logged in as the first registered user (admin) by injecting `' OR 1=1--` into the email field, bypassing the password check.",
+        "evidence": {
+          "method": "POST",
+          "path": "/rest/user/login",
+          "body": {
+            "email": "' OR 1=1--",
+            "password": "anything"
+          },
+          "request_headers": {},
+          "status_code": 200,
+          "response_excerpt": "{\"authentication\":{\"token\":\"eyJ...\",\"bid\":1}}"
+        },
+        "confirmed": true,
+        "discovered_at": 1792908654.570737
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "finding",
+      "data": {
+        "id": "sqli-search-error-leak",
+        "title": "SQL injection & verbose error leak in product search",
+        "category": "A03:2021 Injection",
+        "severity": "high",
+        "summary": "The /rest/products/search endpoint concatenates the `q` param into SQL and returns the raw SQLite error, confirming injection.",
+        "evidence": {
+          "method": "GET",
+          "path": "/rest/products/search?q='",
+          "body": null,
+          "request_headers": {},
+          "status_code": 500,
+          "response_excerpt": "SQLITE_ERROR: unrecognized token near ..."
+        },
+        "confirmed": true,
+        "discovered_at": 1792908654.5707414
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "finding",
+      "data": {
+        "id": "confidential-document-exposure",
+        "title": "Confidential document exposed via static file route",
+        "category": "A01:2021 Broken Access Control",
+        "severity": "high",
+        "summary": "Retrieved an internal confidential document from /ftp with no authentication or authorisation required.",
+        "evidence": {
+          "method": "GET",
+          "path": "/ftp/acquisitions.md",
+          "body": null,
+          "request_headers": {},
+          "status_code": 200,
+          "response_excerpt": "# Acquisition Of ... (confidential)"
+        },
+        "confirmed": true,
+        "discovered_at": 1792908654.570743
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "finding",
+      "data": {
+        "id": "missing-security-headers",
+        "title": "Missing HTTP security headers",
+        "category": "A05:2021 Security Misconfiguration",
+        "severity": "medium",
+        "summary": "Response is served without Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options.",
+        "evidence": {
+          "method": "GET",
+          "path": "/",
+          "body": null,
+          "request_headers": {},
+          "status_code": 200,
+          "response_excerpt": "missing: Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options"
+        },
+        "confirmed": true,
+        "discovered_at": 1792908654.5707445
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "finding",
+      "data": {
+        "id": "version-disclosure",
+        "title": "Application version disclosure",
+        "category": "A06:2021 Vulnerable & Outdated Components",
+        "severity": "low",
+        "summary": "An unauthenticated endpoint returns the exact application version, letting an attacker match it to known CVEs.",
+        "evidence": {
+          "method": "GET",
+          "path": "/rest/admin/application-version",
+          "body": null,
+          "request_headers": {},
+          "status_code": 200,
+          "response_excerpt": "{\"version\":\"20.2.0\"}"
+        },
+        "confirmed": true,
+        "discovered_at": 1792908654.5707457
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation_start",
+      "data": {
+        "finding_id": "sqli-login-bypass"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation",
+      "data": {
+        "finding_id": "sqli-login-bypass",
+        "title": "Parameterise the login query",
+        "rationale": "The bypass works because user input is concatenated into SQL. Parameterised queries send the input as data, never as code, so `' OR 1=1--` is treated as a (nonexistent) email, not as syntax.",
+        "code_fix_before": "const q = `SELECT * FROM Users WHERE email = '${req.body.email}' AND password = '${hash(req.body.password)}'`;\ndb.exec(q);",
+        "code_fix_after": "db.get(\n  'SELECT * FROM Users WHERE email = ? AND password = ?',\n  [req.body.email, hash(req.body.password)]\n);",
+        "rule_name": "sql-injection-filter",
+        "blocks": true
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation_start",
+      "data": {
+        "finding_id": "sqli-search-error-leak"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation",
+      "data": {
+        "finding_id": "sqli-search-error-leak",
+        "title": "Parameterise search + return a generic error",
+        "rationale": "Two fixes: bind the query parameter so the quote can't break the SQL, and replace the raw DB error with a generic 400 so the engine and schema aren't leaked to the client.",
+        "code_fix_before": "const q = `SELECT * FROM Products WHERE name LIKE '%${req.query.q}%'`;\n// ... catch (e) { res.status(500).send(e.toString()); }",
+        "code_fix_after": "db.all('SELECT * FROM Products WHERE name LIKE ?', [`%${q}%`])\n// ... catch (e) { log.error(e); res.status(400).json({error:'Invalid query'}); }",
+        "rule_name": "sql-injection-filter",
+        "blocks": true
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation_start",
+      "data": {
+        "finding_id": "confidential-document-exposure"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation",
+      "data": {
+        "finding_id": "confidential-document-exposure",
+        "title": "Gate the /ftp route behind auth + an allow-list",
+        "rationale": "Static internal files are served with no check. Require authentication for the route and only serve an explicit allow-list of public file types.",
+        "code_fix_before": "app.use('/ftp', express.static('ftp'));",
+        "code_fix_after": "app.use('/ftp', requireAuth, serveAllowList(['.pdf']),\n               express.static('ftp'));",
+        "rule_name": "ftp-path-guard",
+        "blocks": true
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation_start",
+      "data": {
+        "finding_id": "missing-security-headers"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation",
+      "data": {
+        "finding_id": "missing-security-headers",
+        "title": "Add Helmet security headers",
+        "rationale": "A single middleware sets Content-Security-Policy, X-Frame-Options, HSTS and X-Content-Type-Options \u2014 closing off XSS, clickjacking and downgrade attacks at once.",
+        "code_fix_before": "// no security-header middleware configured",
+        "code_fix_after": "import helmet from 'helmet';\napp.use(helmet({\n  contentSecurityPolicy: { directives: { defaultSrc: [\"'self'\"] } }\n}));",
+        "rule_name": "security-headers-injector",
+        "blocks": true
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation_start",
+      "data": {
+        "finding_id": "version-disclosure"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "remediation",
+      "data": {
+        "finding_id": "version-disclosure",
+        "title": "Stop publishing the exact version",
+        "rationale": "Fingerprinting the version maps the app to known CVEs. Remove the public version endpoint (or return a static build id) and patch on a schedule rather than relying on obscurity.",
+        "code_fix_before": "app.get('/rest/admin/application-version',\n        (req,res) => res.json({ version: pkg.version }));",
+        "code_fix_after": "// endpoint removed from public surface; version tracked internally\n// in the SBOM / dependency scanner, not exposed to clients",
+        "rule_name": "version-redactor",
+        "blocks": true
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "verify",
+      "data": {
+        "finding_id": "sqli-login-bypass",
+        "mitigated": true,
+        "rule": "sql-injection-filter"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "verify",
+      "data": {
+        "finding_id": "sqli-search-error-leak",
+        "mitigated": true,
+        "rule": "sql-injection-filter"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "verify",
+      "data": {
+        "finding_id": "confidential-document-exposure",
+        "mitigated": true,
+        "rule": "ftp-path-guard"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "verify",
+      "data": {
+        "finding_id": "missing-security-headers",
+        "mitigated": true,
+        "rule": "security-headers-injector"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "verify",
+      "data": {
+        "finding_id": "version-disclosure",
+        "mitigated": true,
+        "rule": "version-redactor"
+      }
+    },
+    {
+      "t": "2026-10-24T23:10:54",
+      "kind": "done",
+      "data": {
+        "mitigated": 5,
+        "residual": 0
+      }
+    }
+  ]
+}

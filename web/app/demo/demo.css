@@ -36,3 +36,28 @@
 .demo-decisions { display:grid; gap:12px; margin-top:28px; }.demo-footnote { color:#96999d; font-size:12px; margin-top:16px; }.demo-outcome > span { font-size:64px; letter-spacing:-.05em; }.demo-outcome p { font-size:16px; color:#a6a9ad; }.demo-audit { max-height:220px; overflow:auto; margin-top:20px; font-family:var(--font-mono); font-size:11px; }.demo-audit li { padding:6px 0; border-bottom:1px solid #222; }.demo-audit span { color:#9abfff; margin-right:12px; }
 .demo-controls { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-top:24px; }.demo-controls > span { color:#a6a9ad; font-size:12px; }.demo-controls > div { display:flex; gap:12px; }.demo-provenance { text-align:center; font-size:11px; color:#96999d; margin-top:28px; }
 @media(max-width:900px) { .demo-page { padding-inline:20px; }.demo-header { flex-wrap:wrap; padding-block:16px; }.demo-stages { grid-template-columns:repeat(4,1fr); }.demo-scene { grid-template-columns:1fr; }.demo-narration { border-right:0; border-bottom:1px solid #303030; }.demo-narration,.demo-visual { padding:24px; }.demo-controls > div { flex-wrap:wrap; }.demo-brand span { display:none; } }
+
+/* --- Juice Shop purple-team demo additions --- */
+.juice-findings { display:grid; gap:0; margin-top:18px; border:1px solid #303030; border-radius:6px; overflow:hidden; }
+.juice-findings li { border-bottom:1px solid #303030; } .juice-findings li:last-child { border-bottom:0; }
+.juice-findings > li > button { display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:13px 14px; color:#f2f2f2; }
+.juice-findings > li > button:hover { background:#141414; }
+.juice-findings li.open > button { background:#141414; }
+.juice-sev { font-family:var(--font-mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase; padding:3px 7px; border-radius:4px; flex-shrink:0; }
+.juice-sev.critical, .juice-sev.high { color:#f29b9b; border:1px solid #f29b9b50; }
+.juice-sev.medium { color:#dac5a0; border:1px solid #dac5a050; }
+.juice-sev.low, .juice-sev.info { color:#96999d; border:1px solid #30303080; }
+.juice-fname { flex:1; font-size:13px; font-weight:500; min-width:0; }
+.juice-cat { font-family:var(--font-mono); font-size:10px; color:#96999d; flex-shrink:0; }
+.juice-fsum { padding:0 14px 14px 14px; color:#a6a9ad; font-size:12px; line-height:1.7; }
+.juice-evidence, .juice-diff { font-family:var(--font-mono); font-size:11px; line-height:1.65; background:#070707; border:1px solid #303030; border-radius:6px; padding:14px; margin-top:16px; overflow-x:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.juice-evidence .label-caps, .juice-diff .label-caps { display:block; color:#96999d; margin-bottom:10px; }
+.juice-evidence .resp { color:#f29b9b; }
+.juice-diff .rm { display:block; color:#f6a8b4; background:#f29b9b12; padding:0 4px; border-radius:3px; }
+.juice-diff .add { display:block; color:#b7d3ff; background:#9abfff12; padding:0 4px; border-radius:3px; }
+.juice-rationale { color:#a6a9ad; font-size:13px; line-height:1.75; margin-top:14px; }
+.juice-control { margin-top:16px; padding:14px 16px; border:1px solid #9abfff50; background:#111720; border-radius:6px; }
+.juice-control .label-caps { display:block; color:#9abfff; margin-bottom:6px; }
+.juice-control strong { font-family:var(--font-mono); font-size:14px; font-weight:400; color:#f2f2f2; }
+.juice-mono { font-family:var(--font-mono); font-size:11px; color:#c1c9d6; }
+.demo-table td .juice-sev { margin-right:8px; }

@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel Console</title>
+<meta name="description" content="Sentinel purple-team loop against OWASP Juice Shop: Red finds, Blue fixes, every mitigation verified by replay.">
+<style>
+  :root{
+    --bg:#0a0d14; --panel:#111726; --panel-2:#0d1322; --line:#1e2740;
+    --ink:#e8ecf6; --mut:#8793ad; --mut-2:#6b7794;
+    --red:#ff5169; --red-dim:#3a1620; --red-ink:#ffb3bf;
+    --blue:#5b8cff; --blue-dim:#141f3f; --blue-ink:#b9ccff;
+    --green:#36d399; --green-dim:#0f2a22; --green-ink:#8ff0cf;
+    --amber:#f5b342; --amber-dim:#2e2410;
+    --crit:#ff5169; --high:#ff8a4c; --med:#f5b342; --low:#7c89a8; --info:#7c89a8;
+    --mono:"SFMono-Regular",ui-monospace,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  :root:not([data-theme="light"]){color-scheme:dark;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:
+      radial-gradient(1100px 600px at 82% -8%, rgba(91,140,255,.10), transparent 60%),
+      radial-gradient(900px 520px at 6% 2%, rgba(255,81,105,.09), transparent 58%),
+      var(--bg);
+    color:var(--ink); font-family:var(--sans); line-height:1.5;
+    -webkit-font-smoothing:antialiased; padding:0 16px 72px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+
+  /* ---- header ---- */
+  header{padding:30px 2px 18px;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .mark{width:42px;height:42px;border-radius:11px;position:relative;flex:none;
+    background:linear-gradient(135deg,var(--red) 0 50%,var(--blue) 50% 100%);
+    box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 10px 30px rgba(0,0,0,.5);}
+  .mark::after{content:"";position:absolute;inset:11px;border-radius:50%;
+    background:var(--panel);box-shadow:inset 0 0 0 2px rgba(255,255,255,.14);}
+  h1{font-size:23px;letter-spacing:.14em;margin:0;font-weight:700;}
+  h1 .sub{display:block;font-size:11.5px;letter-spacing:.22em;color:var(--mut);font-weight:600;margin-top:3px;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .chip{font-family:var(--mono);font-size:11.5px;color:var(--mut);background:var(--panel);
+    border:1px solid var(--line);border-radius:999px;padding:5px 11px;white-space:nowrap;}
+  .chip b{color:var(--ink);font-weight:600;}
+  .chip.live{color:var(--green-ink);border-color:#1c4a3a;background:var(--green-dim);}
+  .chip.replay{color:var(--amber);border-color:#4a3a14;background:var(--amber-dim);}
+
+  /* ---- control bar ---- */
+  .controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:6px 2px 22px;}
+  button.play{font-family:var(--sans);font-weight:650;font-size:14px;color:#061018;
+    background:linear-gradient(180deg,#eef3ff,#cdd9f7);border:none;border-radius:10px;
+    padding:11px 20px;cursor:pointer;display:inline-flex;align-items:center;gap:9px;
+    box-shadow:0 6px 20px rgba(91,140,255,.22);transition:transform .1s ease, filter .15s;}
+  button.play:hover{filter:brightness(1.06);} button.play:active{transform:translateY(1px);}
+  button.ghost{font-family:var(--mono);font-size:12px;color:var(--mut);background:transparent;
+    border:1px solid var(--line);border-radius:9px;padding:9px 13px;cursor:pointer;}
+  button.ghost:hover{color:var(--ink);border-color:#2c3756;}
+  .speed{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;}
+  .speed button{font-family:var(--mono);font-size:11.5px;color:var(--mut);background:transparent;border:none;
+    border-radius:6px;padding:6px 10px;cursor:pointer;}
+  .speed button[aria-pressed="true"]{background:var(--blue-dim);color:var(--blue-ink);}
+  .spacer{flex:1;}
+  .legend{display:flex;gap:14px;font-size:11.5px;color:var(--mut);font-family:var(--mono);}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:baseline;}
+
+  /* ---- scoreboard ---- */
+  .board{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:10px;}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;}
+  .stat .k{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);font-weight:600;}
+  .stat .v{font-size:40px;font-weight:750;line-height:1.05;margin:7px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+  .stat .d{font-size:12px;color:var(--mut-2);font-family:var(--mono);min-height:16px;}
+  .stat.found{box-shadow:inset 3px 0 0 var(--red);} .stat.found .v{color:var(--red-ink);}
+  .stat.fixed{box-shadow:inset 3px 0 0 var(--blue);} .stat.fixed .v{color:var(--blue-ink);}
+  .stat.res{box-shadow:inset 3px 0 0 var(--green);} .stat.res .v{color:var(--green-ink);}
+  .stat.res.danger{box-shadow:inset 3px 0 0 var(--red);} .stat.res.danger .v{color:var(--red-ink);}
+
+  /* ---- phase rail ---- */
+  .rail{display:flex;align-items:center;gap:0;margin:20px 2px 18px;font-family:var(--mono);font-size:12px;}
+  .rail .step{display:flex;align-items:center;gap:9px;color:var(--mut);opacity:.5;transition:opacity .3s;}
+  .rail .step.on{opacity:1;color:var(--ink);}
+  .rail .dot{width:10px;height:10px;border-radius:50%;background:var(--line);flex:none;}
+  .rail .step.on .dot{box-shadow:0 0 0 4px rgba(91,140,255,.18);}
+  .rail .step.recon.on .dot{background:var(--mut);}
+  .rail .step.red.on .dot{background:var(--red);box-shadow:0 0 0 4px var(--red-dim);}
+  .rail .step.blue.on .dot{background:var(--blue);box-shadow:0 0 0 4px var(--blue-dim);}
+  .rail .step.verify.on .dot{background:var(--green);box-shadow:0 0 0 4px var(--green-dim);}
+  .rail .bar{flex:1;height:1px;background:var(--line);margin:0 12px;min-width:16px;}
+
+  /* ---- findings ---- */
+  .feed{display:flex;flex-direction:column;gap:14px;}
+  .fnd{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel-2);
+    opacity:0;transform:translateY(10px);transition:opacity .45s ease, transform .45s ease, border-color .3s;}
+  .fnd.show{opacity:1;transform:none;}
+  .fnd.verified{border-color:#1d4535;}
+  .fhead{display:flex;align-items:center;gap:13px;padding:14px 16px;cursor:pointer;background:
+    linear-gradient(180deg,var(--panel),var(--panel-2));}
+  .sev{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;padding:4px 8px;border-radius:6px;
+    flex:none;text-transform:uppercase;}
+  .sev.critical{background:var(--red-dim);color:var(--red);} .sev.high{background:#2e1a10;color:var(--high);}
+  .sev.medium{background:var(--amber-dim);color:var(--med);} .sev.low,.sev.info{background:#171d2e;color:var(--low);}
+  .fhead .tt{flex:1;min-width:0;}
+  .fhead .tt .t{font-weight:650;font-size:15px;}
+  .fhead .tt .c{font-family:var(--mono);font-size:11.5px;color:var(--mut);margin-top:2px;}
+  .stamp{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;padding:5px 10px;border-radius:7px;
+    flex:none;white-space:nowrap;opacity:0;transition:opacity .4s;}
+  .stamp.on{opacity:1;}
+  .stamp.ok{background:var(--green-dim);color:var(--green-ink);border:1px solid #1d4535;}
+  .stamp.no{background:var(--red-dim);color:var(--red-ink);border:1px solid #4a1d26;}
+  .caret{color:var(--mut);font-family:var(--mono);transition:transform .2s;flex:none;}
+  .fnd.open .caret{transform:rotate(90deg);}
+
+  .body{display:none;border-top:1px solid var(--line);}
+  .fnd.open .body{display:block;}
+  .cols{display:grid;grid-template-columns:1fr 1fr;}
+  .col{padding:15px 16px;}
+  .col.red{border-right:1px solid var(--line);}
+  .col h4{margin:0 0 10px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    display:flex;align-items:center;gap:8px;}
+  .col.red h4{color:var(--red);} .col.blue h4{color:var(--blue);}
+  .col h4 .tag{font-weight:700;padding:2px 7px;border-radius:5px;font-size:10px;}
+  .col.red h4 .tag{background:var(--red-dim);color:var(--red);}
+  .col.blue h4 .tag{background:var(--blue-dim);color:var(--blue-ink);}
+  .lede{font-size:13px;color:var(--ink);margin:0 0 12px;}
+  .lede.mut{color:var(--mut);}
+  .kv{font-family:var(--mono);font-size:11.5px;color:var(--mut);margin-bottom:9px;word-break:break-all;}
+  .kv b{color:var(--red-ink);font-weight:600;}
+  pre{font-family:var(--mono);font-size:11.5px;line-height:1.55;background:#070a11;border:1px solid var(--line);
+    border-radius:9px;padding:11px 12px;overflow:auto;margin:0 0 10px;white-space:pre-wrap;word-break:break-word;}
+  pre .lbl{display:block;color:var(--mut);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;}
+  pre.evi .resp{color:var(--red-ink);}
+  .diff .rm{color:#ff8ea0;background:rgba(255,81,105,.08);display:block;padding:0 4px;border-radius:3px;}
+  .diff .add{color:#8ff0cf;background:rgba(54,211,153,.09);display:block;padding:0 4px;border-radius:3px;}
+  .ctrl{font-family:var(--mono);font-size:11.5px;color:var(--blue-ink);background:var(--blue-dim);
+    border:1px solid #223963;border-radius:7px;padding:7px 10px;display:inline-flex;gap:8px;align-items:center;}
+  .ctrl b{color:#fff;}
+  footer{margin-top:30px;color:var(--mut-2);font-family:var(--mono);font-size:11px;text-align:center;line-height:1.7;}
+  footer a{color:var(--blue-ink);text-decoration:none;}
+  .note{font-size:11.5px;color:var(--amber);font-family:var(--mono);margin:0 2px 14px;opacity:.9;}
+  @media(max-width:720px){
+    .board{grid-template-columns:1fr;} .cols{grid-template-columns:1fr;}
+    .col.red{border-right:none;border-bottom:1px solid var(--line);}
+    .stat .v{font-size:32px;} .legend{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="mark"></div>
+      <h1>SENTINEL<span class="sub">RED + BLUE &nbsp;·&nbsp; PURPLE-TEAM LOOP</span></h1>
+    </div>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <div class="controls">
+    <button class="play" id="play">▶ &nbsp;Run the loop</button>
+    <button class="ghost" id="expand">Expand all</button>
+    <div class="speed" id="speed">
+      <button data-mul="2">0.5×</button>
+      <button data-mul="1" aria-pressed="true">1×</button>
+      <button data-mul="0.45">2×</button>
+      <button data-mul="0.001">Skip</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="legend">
+      <span><i style="background:var(--red)"></i>Red · attack</span>
+      <span><i style="background:var(--blue)"></i>Blue · fix</span>
+      <span><i style="background:var(--green)"></i>Verified</span>
+    </div>
+  </div>
+
+  <p class="note" id="srcnote"></p>
+
+  <div class="board">
+    <div class="card stat found">
+      <div class="k">Vulnerabilities found</div>
+      <div class="v" id="n-found">0</div>
+      <div class="d" id="d-found">Red agent idle</div>
+    </div>
+    <div class="card stat fixed">
+      <div class="k">Mitigations deployed</div>
+      <div class="v" id="n-fixed">0</div>
+      <div class="d" id="d-fixed">Blue agent idle</div>
+    </div>
+    <div class="card stat res">
+      <div class="k">Residual · verified by replay</div>
+      <div class="v" id="n-res">—</div>
+      <div class="d" id="d-res">loop not closed</div>
+    </div>
+  </div>
+
+  <div class="rail" id="rail">
+    <div class="step recon"><span class="dot"></span>recon</div><span class="bar"></span>
+    <div class="step red"><span class="dot"></span>red · scan</div><span class="bar"></span>
+    <div class="step blue"><span class="dot"></span>blue · remediate</div><span class="bar"></span>
+    <div class="step verify"><span class="dot"></span>verify · replay</div>
+  </div>
+
+  <div class="feed" id="feed"></div>
+
+  <footer>
+    Sentinel runs a closed purple-team loop against <a href="https://owasp.org/projects/juice-shop" target="_blank" rel="noopener">OWASP Juice Shop</a> —
+    a deliberately vulnerable app, attacked only on a copy you run yourself.<br>
+    Red confirms a weakness and records the exact request · Blue ships a fix + edge control · the loop replays Red's request to <b>prove</b> it's blocked.
+  </footer>
+</div>
+
+<script id="run-data" type="application/json">{"tool":"Sentinel purple-team loop","target":"http://localhost:3000","mode":"replay","started_at":"2026-10-24T23:13:52","juice_shop_version":null,"findings":[{"id":"sqli-login-bypass","title":"SQL injection authentication bypass","category":"A03:2021 Injection","severity":"critical","summary":"Logged in as the first registered user (admin) by injecting `' OR 1=1--` into the email field, bypassing the password check.","evidence":{"method":"POST","path":"/rest/user/login","body":{"email":"' OR 1=1--","password":"anything"},"request_headers":{},"status_code":200,"response_excerpt":"{\"authentication\":{\"token\":\"eyJ...\",\"bid\":1}}"},"confirmed":true,"discovered_at":1792908832.7687929},{"id":"sqli-search-error-leak","title":"SQL injection & verbose error leak in product search","category":"A03:2021 Injection","severity":"high","summary":"The /rest/products/search endpoint concatenates the `q` param into SQL and returns the raw SQLite error, confirming injection.","evidence":{"method":"GET","path":"/rest/products/search?q='","body":null,"request_headers":{},"status_code":500,"response_excerpt":"SQLITE_ERROR: unrecognized token near ..."},"confirmed":true,"discovered_at":1792908832.7687972},{"id":"confidential-document-exposure","title":"Confidential document exposed via static file route","category":"A01:2021 Broken Access Control","severity":"high","summary":"Retrieved an internal confidential document from /ftp with no authentication or authorisation required.","evidence":{"method":"GET","path":"/ftp/acquisitions.md","body":null,"request_headers":{},"status_code":200,"response_excerpt":"# Acquisition Of ... (confidential)"},"confirmed":true,"discovered_at":1792908832.768799},{"id":"missing-security-headers","title":"Missing HTTP security headers","category":"A05:2021 Security Misconfiguration","severity":"medium","summary":"Response is served without Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options.","evidence":{"method":"GET","path":"/","body":null,"request_headers":{},"status_code":200,"response_excerpt":"missing: Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options"},"confirmed":true,"discovered_at":1792908832.7688003},{"id":"version-disclosure","title":"Application version disclosure","category":"A06:2021 Vulnerable & Outdated Components","severity":"low","summary":"An unauthenticated endpoint returns the exact application version, letting an attacker match it to known CVEs.","evidence":{"method":"GET","path":"/rest/admin/application-version","body":null,"request_headers":{},"status_code":200,"response_excerpt":"{\"version\":\"20.2.0\"}"},"confirmed":true,"discovered_at":1792908832.7688015}],"remediations":[{"finding_id":"sqli-login-bypass","title":"Parameterise the login query","rationale":"The bypass works because user input is concatenated into SQL. Parameterised queries send the input as data, never as code, so `' OR 1=1--` is treated as a (nonexistent) email, not as syntax.","code_fix_before":"const q = `SELECT * FROM Users WHERE email = '${req.body.email}' AND password = '${hash(req.body.password)}'`;\ndb.exec(q);","code_fix_after":"db.get(\n  'SELECT * FROM Users WHERE email = ? AND password = ?',\n  [req.body.email, hash(req.body.password)]\n);","rule_name":"sql-injection-filter","blocks":true},{"finding_id":"sqli-search-error-leak","title":"Parameterise search + return a generic error","rationale":"Two fixes: bind the query parameter so the quote can't break the SQL, and replace the raw DB error with a generic 400 so the engine and schema aren't leaked to the client.","code_fix_before":"const q = `SELECT * FROM Products WHERE name LIKE '%${req.query.q}%'`;\n// ... catch (e) { res.status(500).send(e.toString()); }","code_fix_after":"db.all('SELECT * FROM Products WHERE name LIKE ?', [`%${q}%`])\n// ... catch (e) { log.error(e); res.status(400).json({error:'Invalid query'}); }","rule_name":"sql-injection-filter","blocks":true},{"finding_id":"confidential-document-exposure","title":"Gate the /ftp route behind auth + an allow-list","rationale":"Static internal files are served with no check. Require authentication for the route and only serve an explicit allow-list of public file types.","code_fix_before":"app.use('/ftp', express.static('ftp'));","code_fix_after":"app.use('/ftp', requireAuth, serveAllowList(['.pdf']),\n               express.static('ftp'));","rule_name":"ftp-path-guard","blocks":true},{"finding_id":"missing-security-headers","title":"Add Helmet security headers","rationale":"A single middleware sets Content-Security-Policy, X-Frame-Options, HSTS and X-Content-Type-Options \u2014 closing off XSS, clickjacking and downgrade attacks at once.","code_fix_before":"// no security-header middleware configured","code_fix_after":"import helmet from 'helmet';\napp.use(helmet({\n  contentSecurityPolicy: { directives: { defaultSrc: [\"'self'\"] } }\n}));","rule_name":"security-headers-injector","blocks":true},{"finding_id":"version-disclosure","title":"Stop publishing the exact version","rationale":"Fingerprinting the version maps the app to known CVEs. Remove the public version endpoint (or return a static build id) and patch on a schedule rather than relying on obscurity.","code_fix_before":"app.get('/rest/admin/application-version',\n        (req,res) => res.json({ version: pkg.version }));","code_fix_after":"// endpoint removed from public surface; version tracked internally\n// in the SBOM / dependency scanner, not exposed to clients","rule_name":"version-redactor","blocks":true}],"verification":{"before":{"open":5,"by_severity":{"critical":1,"high":2,"medium":1,"low":1}},"after":{"open":0,"mitigated":[{"finding_id":"sqli-login-bypass","rule":"sql-injection-filter","severity":"critical"},{"finding_id":"sqli-search-error-leak","rule":"sql-injection-filter","severity":"high"},{"finding_id":"confidential-document-exposure","rule":"ftp-path-guard","severity":"high"},{"finding_id":"missing-security-headers","rule":"security-headers-injector","severity":"medium"},{"finding_id":"version-disclosure","rule":"version-redactor","severity":"low"}],"residual":[]}},"timeline":[{"t":"2026-10-24T23:13:52","kind":"recon","data":{"target":"http://localhost:3000","mode":"replay"}},{"t":"2026-10-24T23:13:52","kind":"finding","data":{"id":"sqli-login-bypass","title":"SQL injection authentication bypass","category":"A03:2021 Injection","severity":"critical","summary":"Logged in as the first registered user (admin) by injecting `' OR 1=1--` into the email field, bypassing the password check.","evidence":{"method":"POST","path":"/rest/user/login","body":{"email":"' OR 1=1--","password":"anything"},"request_headers":{},"status_code":200,"response_excerpt":"{\"authentication\":{\"token\":\"eyJ...\",\"bid\":1}}"},"confirmed":true,"discovered_at":1792908832.7687929}},{"t":"2026-10-24T23:13:52","kind":"finding","data":{"id":"sqli-search-error-leak","title":"SQL injection & verbose error leak in product search","category":"A03:2021 Injection","severity":"high","summary":"The /rest/products/search endpoint concatenates the `q` param into SQL and returns the raw SQLite error, confirming injection.","evidence":{"method":"GET","path":"/rest/products/search?q='","body":null,"request_headers":{},"status_code":500,"response_excerpt":"SQLITE_ERROR: unrecognized token near ..."},"confirmed":true,"discovered_at":1792908832.7687972}},{"t":"2026-10-24T23:13:52","kind":"finding","data":{"id":"confidential-document-exposure","title":"Confidential document exposed via static file route","category":"A01:2021 Broken Access Control","severity":"high","summary":"Retrieved an internal confidential document from /ftp with no authentication or authorisation required.","evidence":{"method":"GET","path":"/ftp/acquisitions.md","body":null,"request_headers":{},"status_code":200,"response_excerpt":"# Acquisition Of ... (confidential)"},"confirmed":true,"discovered_at":1792908832.768799}},{"t":"2026-10-24T23:13:52","kind":"finding","data":{"id":"missing-security-headers","title":"Missing HTTP security headers","category":"A05:2021 Security Misconfiguration","severity":"medium","summary":"Response is served without Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options.","evidence":{"method":"GET","path":"/","body":null,"request_headers":{},"status_code":200,"response_excerpt":"missing: Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, X-Content-Type-Options"},"confirmed":true,"discovered_at":1792908832.7688003}},{"t":"2026-10-24T23:13:52","kind":"finding","data":{"id":"version-disclosure","title":"Application version disclosure","category":"A06:2021 Vulnerable & Outdated Components","severity":"low","summary":"An unauthenticated endpoint returns the exact application version, letting an attacker match it to known CVEs.","evidence":{"method":"GET","path":"/rest/admin/application-version","body":null,"request_headers":{},"status_code":200,"response_excerpt":"{\"version\":\"20.2.0\"}"},"confirmed":true,"discovered_at":1792908832.7688015}},{"t":"2026-10-24T23:13:52","kind":"remediation_start","data":{"finding_id":"sqli-login-bypass"}},{"t":"2026-10-24T23:13:52","kind":"remediation","data":{"finding_id":"sqli-login-bypass","title":"Parameterise the login query","rationale":"The bypass works because user input is concatenated into SQL. Parameterised queries send the input as data, never as code, so `' OR 1=1--` is treated as a (nonexistent) email, not as syntax.","code_fix_before":"const q = `SELECT * FROM Users WHERE email = '${req.body.email}' AND password = '${hash(req.body.password)}'`;\ndb.exec(q);","code_fix_after":"db.get(\n  'SELECT * FROM Users WHERE email = ? AND password = ?',\n  [req.body.email, hash(req.body.password)]\n);","rule_name":"sql-injection-filter","blocks":true}},{"t":"2026-10-24T23:13:52","kind":"remediation_start","data":{"finding_id":"sqli-search-error-leak"}},{"t":"2026-10-24T23:13:52","kind":"remediation","data":{"finding_id":"sqli-search-error-leak","title":"Parameterise search + return a generic error","rationale":"Two fixes: bind the query parameter so the quote can't break the SQL, and replace the raw DB error with a generic 400 so the engine and schema aren't leaked to the client.","code_fix_before":"const q = `SELECT * FROM Products WHERE name LIKE '%${req.query.q}%'`;\n// ... catch (e) { res.status(500).send(e.toString()); }","code_fix_after":"db.all('SELECT * FROM Products WHERE name LIKE ?', [`%${q}%`])\n// ... catch (e) { log.error(e); res.status(400).json({error:'Invalid query'}); }","rule_name":"sql-injection-filter","blocks":true}},{"t":"2026-10-24T23:13:52","kind":"remediation_start","data":{"finding_id":"confidential-document-exposure"}},{"t":"2026-10-24T23:13:52","kind":"remediation","data":{"finding_id":"confidential-document-exposure","title":"Gate the /ftp route behind auth + an allow-list","rationale":"Static internal files are served with no check. Require authentication for the route and only serve an explicit allow-list of public file types.","code_fix_before":"app.use('/ftp', express.static('ftp'));","code_fix_after":"app.use('/ftp', requireAuth, serveAllowList(['.pdf']),\n               express.static('ftp'));","rule_name":"ftp-path-guard","blocks":true}},{"t":"2026-10-24T23:13:52","kind":"remediation_start","data":{"finding_id":"missing-security-headers"}},{"t":"2026-10-24T23:13:52","kind":"remediation","data":{"finding_id":"missing-security-headers","title":"Add Helmet security headers","rationale":"A single middleware sets Content-Security-Policy, X-Frame-Options, HSTS and X-Content-Type-Options \u2014 closing off XSS, clickjacking and downgrade attacks at once.","code_fix_before":"// no security-header middleware configured","code_fix_after":"import helmet from 'helmet';\napp.use(helmet({\n  contentSecurityPolicy: { directives: { defaultSrc: [\"'self'\"] } }\n}));","rule_name":"security-headers-injector","blocks":true}},{"t":"2026-10-24T23:13:52","kind":"remediation_start","data":{"finding_id":"version-disclosure"}},{"t":"2026-10-24T23:13:52","kind":"remediation","data":{"finding_id":"version-disclosure","title":"Stop publishing the exact version","rationale":"Fingerprinting the version maps the app to known CVEs. Remove the public version endpoint (or return a static build id) and patch on a schedule rather than relying on obscurity.","code_fix_before":"app.get('/rest/admin/application-version',\n        (req,res) => res.json({ version: pkg.version }));","code_fix_after":"// endpoint removed from public surface; version tracked internally\n// in the SBOM / dependency scanner, not exposed to clients","rule_name":"version-redactor","blocks":true}},{"t":"2026-10-24T23:13:52","kind":"verify","data":{"finding_id":"sqli-login-bypass","mitigated":true,"rule":"sql-injection-filter"}},{"t":"2026-10-24T23:13:52","kind":"verify","data":{"finding_id":"sqli-search-error-leak","mitigated":true,"rule":"sql-injection-filter"}},{"t":"2026-10-24T23:13:52","kind":"verify","data":{"finding_id":"confidential-document-exposure","mitigated":true,"rule":"ftp-path-guard"}},{"t":"2026-10-24T23:13:52","kind":"verify","data":{"finding_id":"missing-security-headers","mitigated":true,"rule":"security-headers-injector"}},{"t":"2026-10-24T23:13:52","kind":"verify","data":{"finding_id":"version-disclosure","mitigated":true,"rule":"version-redactor"}},{"t":"2026-10-24T23:13:52","kind":"done","data":{"mitigated":5,"residual":0}}]}</script>
+<script>
+(function(){
+  "use strict";
+  const EMBED = JSON.parse(document.getElementById("run-data").textContent);
+  let RUN = EMBED;
+
+  const $ = s => document.querySelector(s);
+  const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+  const esc = s => (s==null?"":String(s)).replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));
+  let MUL = 1;                                   // speed multiplier
+  const wait = ms => new Promise(r=>setTimeout(r, ms*MUL));
+
+  // ---- code diff renderer (before = removed, after = added) ----
+  function diff(before, after){
+    const b = esc(before).split("\n").map(l=>`<span class="rm">- ${l||" "}</span>`).join("");
+    const a = esc(after).split("\n").map(l=>`<span class="add">+ ${l||" "}</span>`).join("");
+    return `<pre class="diff"><span class="lbl">code fix — before → after</span>${b}${a}</pre>`;
+  }
+
+  function sevCount(obj){
+    const order=["critical","high","medium","low","info"];
+    return order.filter(k=>obj[k]).map(k=>`${obj[k]} ${k}`).join(" · ")||"—";
+  }
+
+  // ---- build the static scaffold (hidden), then animate ----
+  const feed = $("#feed");
+  let cards = [];   // {node, stamp, remId}
+  function render(){
+    // chips
+    const live = RUN.mode === "live";
+    $("#chips").innerHTML = "";
+    const add=(h,cls)=>$("#chips").appendChild(el("span","chip"+(cls?" "+cls:""),h));
+    add(`<b>${esc(RUN.target||"localhost:3000")}</b>`);
+    add(live?"● LIVE target":"◦ REPLAY (offline)", live?"live":"replay");
+    if(RUN.juice_shop_version) add(`juice-shop <b>${esc(RUN.juice_shop_version)}</b>`);
+    add(`${RUN.findings.length} probes fired`);
+
+    $("#srcnote").textContent = live
+      ? "Showing a real run: Red attacked a live Juice Shop and Blue's controls were replayed against the captured requests."
+      : "Offline replay — identical in shape to a live run. Start Juice Shop and run with --mode live for real captured traffic.";
+
+    const remById = {};
+    RUN.remediations.forEach(r=>remById[r.finding_id]=r);
+
+    feed.innerHTML=""; cards=[];
+    RUN.findings.forEach((f,i)=>{
+      const rem = remById[f.id] || {};
+      const node = el("div","fnd");
+      node.dataset.sev = f.severity;
+      const ev = f.evidence||{};
+      const reqLine = `${esc(ev.method||"GET")} ${esc(ev.path||"")}`;
+      const bodyStr = ev.body ? JSON.stringify(ev.body) : "";
+      node.innerHTML = `
+        <div class="fhead">
+          <span class="sev ${f.severity}">${f.severity}</span>
+          <div class="tt"><div class="t">${esc(f.title)}</div>
+            <div class="c">${esc(f.category)} &nbsp;·&nbsp; ${reqLine}</div></div>
+          <span class="stamp" data-stamp></span>
+          <span class="caret">▸</span>
+        </div>
+        <div class="body">
+          <div class="cols">
+            <div class="col red">
+              <h4><span class="tag">RED</span> what the attacker did</h4>
+              <p class="lede">${esc(f.summary)}</p>
+              <pre class="evi"><span class="lbl">captured request → response</span>${esc(reqLine)}${bodyStr?"\n"+esc(bodyStr):""}
+<span class="resp">↳ ${esc(ev.status_code||"")}  ${esc(ev.response_excerpt||"")}</span></pre>
+            </div>
+            <div class="col blue">
+              <h4><span class="tag">BLUE</span> ${esc(rem.title||"remediation")}</h4>
+              <p class="lede mut">${esc(rem.rationale||"")}</p>
+              ${rem.code_fix_before!=null?diff(rem.code_fix_before,rem.code_fix_after):""}
+              <span class="ctrl">edge control &nbsp;<b>${esc(rem.rule_name||"—")}</b></span>
+            </div>
+          </div>
+        </div>`;
+      node.querySelector(".fhead").addEventListener("click",()=>node.classList.toggle("open"));
+      feed.appendChild(node);
+      cards.push({node, stamp:node.querySelector("[data-stamp]"), id:f.id, sev:f.severity});
+    });
+    // reset board
+    $("#n-found").textContent="0"; $("#d-found").textContent="Red agent idle";
+    $("#n-fixed").textContent="0"; $("#d-fixed").textContent="Blue agent idle";
+    $("#n-res").textContent="—"; $("#d-res").textContent="loop not closed";
+    $("#rail").querySelectorAll(".step").forEach(s=>s.classList.remove("on"));
+    $(".stat.res").classList.remove("danger");
+  }
+
+  // ---- the animated run ----
+  let running=false;
+  async function play(){
+    if(running) return; running=true;
+    render();
+    const rail = k => $("#rail .step."+k).classList.add("on");
+    const foundEl=$("#n-found"), fixedEl=$("#n-fixed");
+
+    rail("recon");
+    $("#d-found").textContent="recon · "+(RUN.mode==="live"?"fingerprinting target":"loading canned target");
+    await wait(600);
+
+    // RED: reveal findings one by one
+    rail("red");
+    const bySev={};
+    for(let i=0;i<cards.length;i++){
+      const c=cards[i], f=RUN.findings[i];
+      c.node.classList.add("show");
+      bySev[c.sev]=(bySev[c.sev]||0)+1;
+      foundEl.textContent=i+1;
+      $("#d-found").textContent=sevCount(bySev);
+      c.node.animate([{boxShadow:"0 0 0 2px var(--red)"},{boxShadow:"0 0 0 0 transparent"}],{duration:650});
+      await wait(520);
+    }
+    await wait(300);
+
+    // BLUE: deploy a mitigation per finding
+    rail("blue");
+    const remById={}; RUN.remediations.forEach(r=>remById[r.id]=r===undefined?null:r);
+    for(let i=0;i<cards.length;i++){
+      fixedEl.textContent=i+1;
+      $("#d-fixed").textContent="control deployed: "+(RUN.remediations[i]?RUN.remediations[i].rule_name:"—");
+      const col=cards[i].node.querySelector(".col.blue");
+      if(col) col.animate([{background:"rgba(91,140,255,.16)"},{background:"transparent"}],{duration:650});
+      await wait(430);
+    }
+    await wait(300);
+
+    // VERIFY: replay each finding's request through the now-active controls
+    rail("verify");
+    const after = (RUN.verification&&RUN.verification.after)||{mitigated:[],open:0};
+    const mitig = new Set((after.mitigated||[]).map(m=>m.finding_id));
+    let ok=0;
+    for(let i=0;i<cards.length;i++){
+      const c=cards[i];
+      const blocked = mitig.has(c.id);
+      c.stamp.classList.add("on", blocked?"ok":"no");
+      c.stamp.textContent = blocked ? "✓ VERIFIED BLOCKED" : "✗ RESIDUAL";
+      if(blocked){ ok++; c.node.classList.add("verified"); }
+      $("#n-res").textContent = (cards.length-ok);
+      await wait(360);
+    }
+    const residual = (after.open!=null)?after.open:(cards.length-ok);
+    $("#n-res").textContent = residual;
+    $("#d-res").textContent = residual===0 ? "loop closed · every attack re-blocked" : residual+" still open";
+    $(".stat.res").classList.toggle("danger", residual>0);
+    $("#d-fixed").textContent = ok+" mitigations verified by replay";
+    running=false;
+  }
+
+  // ---- controls ----
+  $("#play").addEventListener("click", play);
+  $("#expand").addEventListener("click", function(){
+    const anyClosed=[...document.querySelectorAll(".fnd")].some(n=>!n.classList.contains("open"));
+    document.querySelectorAll(".fnd").forEach(n=>n.classList.toggle("open",anyClosed));
+    this.textContent = anyClosed ? "Collapse all" : "Expand all";
+  });
+  $("#speed").addEventListener("click",e=>{
+    const b=e.target.closest("button"); if(!b)return;
+    MUL=parseFloat(b.dataset.mul);
+    [...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed", x===b));
+  });
+
+  // ---- try a live run.json sitting next to the page; else use embed ----
+  (async function init(){
+    if(location.protocol !== "file:"){        // skip fetch on file:// (not supported, noisy)
+      try{
+        const res = await fetch("run.json",{cache:"no-store"});
+        if(res.ok){ const j=await res.json(); if(j&&j.findings){ RUN=j; } }
+      }catch(_){}
+    }
+    render();
+    // auto-play once on load so an idle screen is never just static
+    setTimeout(play, 500);
+  })();
+})();
+</script>
+</body>
+</html>
