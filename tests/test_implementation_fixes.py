@@ -134,13 +134,18 @@ def test_export_reads_one_snapshot_while_writer_commits(tmp_path, monkeypatch):
         assert writer.run_artifacts(rid)['patches']
 
 
-def test_invalid_red_candidate_does_not_shift_bypass_rationale(tmp_path, monkeypatch):
+def test_invalid_red_candidate_does_not_shift_bypass_rationale(tmp_path):
     from sentinel.agents import red
-    valid = red.propose(300000, BASELINE_V1, 1)[0]
+    valid = red.FixtureRedPolicy().propose(objective_cents=300000, rules=BASELINE_V1, turn=1,
+                                           history=[], seed=7, run_id="run-000001")[0]
     invalid = replace(valid, funding_cents=1, rationale='invalid candidate')
     valid = replace(valid, rationale='valid candidate evidence')
-    monkeypatch.setattr(red, 'propose', lambda *args: [invalid, valid])
-    with TestClient(create_app(str(tmp_path / 'app.db'))) as client:
+
+    class TwoCandidates:
+        def propose(self, **kwargs):
+            return [invalid, valid]
+
+    with TestClient(create_app(str(tmp_path / 'app.db'), red_policy=TwoCandidates())) as client:
         lab = client.post('/labs', json=CONFIG).json()['lab_id']
         response = client.post(f'/labs/{lab}/red-runs', json={})
         assert response.status_code == 201

@@ -12,7 +12,8 @@ export default function SetupCard({ seed, accounts, onSeedChange, onAccountsChan
 }) {
   return (
     <section id="step-setup" className="scroll-mt-24 rounded-xl border bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold">1. Create a fake bank</h2>
+      <h2 className="text-lg font-semibold">1. Create a fake bank</h2>
+      <p className="mb-4 mt-0.5 text-sm text-slate-500">Generates a synthetic credit union with normal customer activity.</p>
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col text-sm">
           Seed

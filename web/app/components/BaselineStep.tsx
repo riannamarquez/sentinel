@@ -19,7 +19,8 @@ export default function BaselineStep({ results, onRun, loading }: {
   loading: boolean;
 }) {
   return (
-    <StepCard id="step-baseline" title="2. Test the current fraud rules" action={
+    <StepCard id="step-baseline" title="2. Test the current fraud rules"
+      subtitle="Checks three known cases against today's fraud rules." action={
       <button onClick={onRun} disabled={loading}
         className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-50">
         Run baseline

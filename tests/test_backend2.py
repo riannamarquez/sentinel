@@ -69,7 +69,7 @@ def test_background_blue_events_and_portable_lab_export(tmp_path):
         bundle = client.get(f'/labs/{lab}/replay').json()
         assert bundle['bypasses'][0]['bypass_id'] == red['bypass']['bypass_id']
         assert bundle['patches'] and bundle['events'] and bundle['versions']
-        assert client.get(f'/labs/{lab}/timeline').json()['transactions']
+        assert client.get(f'/labs/{lab}/world').json()['transactions']
 
 
 def test_blue_transport_failure_marks_run_failed(tmp_path):

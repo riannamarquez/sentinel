@@ -9,7 +9,8 @@ export default function RedStep({ redRun, onRun, loading }: {
 }) {
   const bypass = redRun?.bypass;
   return (
-    <StepCard id="step-red" title="3. Let Red try to sneak money past the rules" action={
+    <StepCard id="step-red" title="3. Let Red try to sneak money past the rules"
+      subtitle="Red tries to move stolen money out without triggering any rule." action={
       <button onClick={onRun} disabled={loading}
         className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-50">
         Start Red challenge

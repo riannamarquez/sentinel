@@ -1,7 +1,7 @@
 """Sentinel API (design-v2 §7). Blue supports live/fixture/replay and background execution.
 
 Run: make run   (or: uvicorn --factory sentinel.api.app:create_app). The database path comes from
-SENTINEL_DB (default ./sentinel.db).
+SENTINEL_DB (default ./sentinel.db). SENTINEL_RED picks Red's policy: "heuristic" (default) or "fixture".
 """
 from __future__ import annotations
 
@@ -23,9 +23,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sentinel.agents import blue, red
 from sentinel.api.states import InvalidTransition, RunState, TERMINAL
 from sentinel.api.store import Conflict, NotFound, Store
+from sentinel.api.timeline import Timeline, build_timeline
 from sentinel.detector.baseline import BASELINE_V1
+from sentinel.detector.explain import near_misses
 from sentinel.detector.patches import PatchError, apply_patch
-from sentinel.detector.score import diagnose, score
+from sentinel.detector.score import diagnose, rules_fired, score
 from sentinel.eval.evaluator import evaluate
 from sentinel.fixtures import OBJECTIVE_CENTS, load_golden
 from sentinel.llm.adapter import AdapterError, from_env, proposal_request
@@ -64,14 +66,26 @@ class ApprovalRequest(Body):
     decision: Literal["approve", "reject"]
 
 
+RED_POLICIES = {"heuristic": red.HeuristicRedPolicy, "fixture": red.FixtureRedPolicy}
+
+
+def red_policy_from_env() -> red.FixtureRedPolicy | red.HeuristicRedPolicy:
+    name = os.environ.get("SENTINEL_RED", "heuristic")
+    if name not in RED_POLICIES:
+        raise ValueError(f"SENTINEL_RED={name!r}; expected one of {sorted(RED_POLICIES)}")
+    return RED_POLICIES[name]()
+
+
 @lru_cache(maxsize=8)
 def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list]:
     """Deterministic, so caching by (seed, sizes) is safe; every evaluation of a lab sees the same splits."""
     return factory.build_splits(seed, benign_n, attack_copies)
 
 
-def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
+def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> FastAPI:
     load_dotenv(dotenv_path=Path.cwd() / '.env', override=False)
+    if red_policy is None:
+        red_policy = red_policy_from_env()
     db_path = db_path or os.environ.get("SENTINEL_DB", "sentinel.db")
     store = Store(db_path)
     adapter = adapter if adapter is not None else from_env(db_path)
@@ -143,8 +157,10 @@ def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
         store.transition(run_id, S.GENERATE_WORLD, out=lab["world"])
         store.transition(run_id, S.BASELINE_SCORE, out=rules)
 
+        history: list[red.Attempt] = []
         for turn in range(1, body.max_turns + 1):
-            candidates = red.propose(body.objective_cents, rules, turn)
+            candidates = red_policy.propose(objective_cents=body.objective_cents, rules=rules, turn=turn,
+                                            history=history, seed=lab["config"].seed, run_id=run_id)
             store.transition(run_id, S.RED_PROPOSES, actor="agent:red", turns=turn,
                              out=[c.actions for c in candidates])
             valid, dropped = [], []
@@ -163,7 +179,13 @@ def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
             store.transition(run_id, S.RUN_SIMULATION, out=results)
             bypasses = [(s, c) for (s, c), d in zip(valid, results)
                         if not d.alert and moved_out_cents(s) >= body.objective_cents]
-            store.transition(run_id, S.MEASURE_OUTCOME, out={"bypasses": len(bypasses)})
+            # rules_fired, not score().triggered_rule_ids: score() stops at the first alert and hides the rest.
+            # Dropped candidates never get here, so they can't pose as a bypass with no rules fired.
+            attempts = [red.Attempt(turn=turn, recipe=c.recipe, rules_fired=sorted(rules_fired(s, rules)),
+                                    moved_cents=moved_out_cents(s), near_misses=near_misses(s, rules))
+                        for s, c in valid if c.recipe is not None]
+            history.extend(attempts)
+            store.transition(run_id, S.MEASURE_OUTCOME, out={"bypasses": len(bypasses), "attempts": attempts})
             if bypasses:
                 scenario, cand = bypasses[0]
                 trace = BypassTrace(
@@ -171,9 +193,11 @@ def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
                     moved_cents=moved_out_cents(scenario), objective_cents=body.objective_cents,
                     why_it_worked=diagnose(scenario, rules), rationale=cand.rationale)
                 store.save_bypass(run_id, trace)
-                return {"run_id": run_id, "state": S.MEASURE_OUTCOME, "turns": turn, "bypass": trace}
+                return {"run_id": run_id, "state": S.MEASURE_OUTCOME, "turns": turn, "bypass": trace,
+                        "history": [a.model_dump() for a in history]}
         store.transition(run_id, S.NO_BYPASS_FOUND)
-        return {"run_id": run_id, "state": S.NO_BYPASS_FOUND, "turns": body.max_turns, "bypass": None}
+        return {"run_id": run_id, "state": S.NO_BYPASS_FOUND, "turns": body.max_turns, "bypass": None,
+                "history": [a.model_dump() for a in history]}
 
     def process_patches(lab_id: str, body: PatchRequest):
         run = store.run(body.run_id, lab_id)
@@ -256,6 +280,18 @@ def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
     def reports(lab_id: str):
         store.lab(lab_id)
         return {"reports": store.reports(lab_id), "versions": store.versions(lab_id)}
+
+    @app.get("/labs/{lab_id}/timeline", response_model=Timeline)
+    def get_timeline(lab_id: str, run_id: str, version: int | None = None):
+        run = store.run(run_id, lab_id)
+        version = run["base_version"] if version is None else version
+        rules = store.rules(lab_id, version)
+        trace = store.bypass_for_run(run_id)
+        if trace is None:
+            raise NotFound(f"no bypass for run {run_id}")
+        return build_timeline(trace.scenario, rules, lab_id=lab_id, run_id=run_id, version=version,
+                              objective_cents=trace.objective_cents,
+                              background_accounts=store.lab(lab_id)["world"]["accounts"])
 
     @app.get("/runs/{run_id}")
     def get_run(run_id: str):
@@ -381,8 +417,8 @@ def create_app(db_path: str | None = None, *, adapter=None) -> FastAPI:
             bundle["llm_recordings"] = [r for r in adapter.store.export() if r['input_hash'] in keys]
         return bundle
 
-    @app.get("/labs/{lab_id}/timeline")
-    def timeline(lab_id: str):
+    @app.get("/labs/{lab_id}/world")
+    def world_view(lab_id: str):
         lab = store.lab(lab_id)
         world = generate_world(lab["config"])
         bundle = store.export_lab(lab_id)
