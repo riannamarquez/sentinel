@@ -1,7 +1,7 @@
 """Walking-skeleton API (design-v2 §7). Agents are fixture stubs; steps run synchronously.
 
 Run: make run   (or: uvicorn --factory sentinel.api.app:create_app). The database path comes from
-SENTINEL_DB (default ./sentinel.db).
+SENTINEL_DB (default ./sentinel.db). SENTINEL_RED picks Red's policy: "heuristic" (default) or "fixture".
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from sentinel.api.store import Conflict, NotFound, Store
 from sentinel.api.timeline import Timeline, build_timeline
 from sentinel.detector.baseline import BASELINE_V1
 from sentinel.detector.patches import PatchError, apply_patch
-from sentinel.detector.score import diagnose, score
+from sentinel.detector.score import diagnose, rules_fired, score
 from sentinel.eval.evaluator import evaluate
 from sentinel.fixtures import OBJECTIVE_CENTS, load_golden
 from sentinel.scenarios import factory
@@ -56,13 +56,24 @@ class ApprovalRequest(Body):
     decision: Literal["approve", "reject"]
 
 
+RED_POLICIES = {"heuristic": red.HeuristicRedPolicy, "fixture": red.FixtureRedPolicy}
+
+
+def red_policy_from_env() -> red.FixtureRedPolicy | red.HeuristicRedPolicy:
+    name = os.environ.get("SENTINEL_RED", "heuristic")
+    if name not in RED_POLICIES:
+        raise ValueError(f"SENTINEL_RED={name!r}; expected one of {sorted(RED_POLICIES)}")
+    return RED_POLICIES[name]()
+
+
 @lru_cache(maxsize=8)
 def lab_splits(seed: int, benign_n: int, attack_copies: int) -> dict[Split, list]:
     """Deterministic, so caching by (seed, sizes) is safe; every evaluation of a lab sees the same splits."""
     return factory.build_splits(seed, benign_n, attack_copies)
 
 
-def create_app(db_path: str | None = None) -> FastAPI:
+def create_app(db_path: str | None = None, red_policy=None) -> FastAPI:
+    red_policy = red_policy or red_policy_from_env()   # an unknown SENTINEL_RED fails here, at startup
     app = FastAPI(title="Sentinel", version="0.1.0")
     store = Store(db_path or os.environ.get("SENTINEL_DB", "sentinel.db"))
     app.state.store = store
@@ -116,11 +127,13 @@ def create_app(db_path: str | None = None) -> FastAPI:
         store.transition(run_id, S.GENERATE_WORLD, out=lab["world"])
         store.transition(run_id, S.BASELINE_SCORE, out=rules)
 
+        history: list[red.Attempt] = []
         for turn in range(1, body.max_turns + 1):
-            candidates = red.propose(body.objective_cents, rules, turn)
+            candidates = red_policy.propose(objective_cents=body.objective_cents, rules=rules, turn=turn,
+                                            history=history, seed=lab["config"].seed, run_id=run_id)
             store.transition(run_id, S.RED_PROPOSES, actor="agent:red", turns=turn,
                              out=[c.actions for c in candidates])
-            valid, dropped = [], []
+            valid, valid_candidates, dropped = [], [], []
             for i, c in enumerate(candidates):
                 try:
                     valid.append(apply_actions(
@@ -128,14 +141,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
                         seed=derive_seed(lab["config"].seed, run_id, turn, i), split=Split.SEARCH,
                         start_ts=c.start_ts, source_account_id=c.source_account_id,
                         funding_cents=c.funding_cents, actions=c.actions))
+                    valid_candidates.append(c)
                 except ActionError as e:
                     dropped.append({"candidate": i, "reason": str(e)})   # logged and dropped, never repaired
             store.transition(run_id, S.VALIDATE_ACTIONS, out={"valid": len(valid), "dropped": dropped})
             results = [score(s, rules, version) for s in valid]
             store.transition(run_id, S.RUN_SIMULATION, out=results)
-            bypasses = [(s, c) for s, d, c in zip(valid, results, candidates)
+            bypasses = [(s, c) for s, d, c in zip(valid, results, valid_candidates)
                         if not d.alert and moved_out_cents(s) >= body.objective_cents]
-            store.transition(run_id, S.MEASURE_OUTCOME, out={"bypasses": len(bypasses)})
+            # rules_fired, not score().triggered_rule_ids: score() stops at the first alert and hides the rest.
+            # Dropped candidates never get here, so they can't pose as a bypass with no rules fired.
+            attempts = [red.Attempt(turn=turn, recipe=c.recipe, rules_fired=sorted(rules_fired(s, rules)),
+                                    moved_cents=moved_out_cents(s))
+                        for s, c in zip(valid, valid_candidates) if c.recipe is not None]
+            history.extend(attempts)
+            store.transition(run_id, S.MEASURE_OUTCOME, out={"bypasses": len(bypasses), "attempts": attempts})
             if bypasses:
                 scenario, cand = bypasses[0]
                 trace = BypassTrace(
@@ -143,9 +163,11 @@ def create_app(db_path: str | None = None) -> FastAPI:
                     moved_cents=moved_out_cents(scenario), objective_cents=body.objective_cents,
                     why_it_worked=diagnose(scenario, rules), rationale=cand.rationale)
                 store.save_bypass(run_id, trace)
-                return {"run_id": run_id, "state": S.MEASURE_OUTCOME, "turns": turn, "bypass": trace}
+                return {"run_id": run_id, "state": S.MEASURE_OUTCOME, "turns": turn, "bypass": trace,
+                        "history": [a.model_dump() for a in history]}
         store.transition(run_id, S.NO_BYPASS_FOUND)
-        return {"run_id": run_id, "state": S.NO_BYPASS_FOUND, "turns": body.max_turns, "bypass": None}
+        return {"run_id": run_id, "state": S.NO_BYPASS_FOUND, "turns": body.max_turns, "bypass": None,
+                "history": [a.model_dump() for a in history]}
 
     @app.post("/labs/{lab_id}/patches", status_code=201)
     def patches(lab_id: str, body: PatchRequest):

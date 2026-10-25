@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sentinel.agents import blue
+from sentinel.agents.red import FixtureRedPolicy
 from sentinel.api.app import create_app
 from sentinel.api.states import ALLOWED_TRANSITIONS, TERMINAL, RunState
 from sentinel.api.timeline import Timeline
@@ -25,7 +26,7 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def client(db_path):
-    with TestClient(create_app(str(db_path))) as c:
+    with TestClient(create_app(str(db_path), red_policy=FixtureRedPolicy())) as c:
         yield c
 
 
