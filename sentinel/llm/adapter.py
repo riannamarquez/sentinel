@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from contextlib import closing, contextmanager
 from pathlib import Path
 import sqlite3
 from contextvars import ContextVar
@@ -14,9 +15,14 @@ from urllib.error import HTTPError, URLError
 from pydantic import BaseModel, ValidationError
 from sentinel.schemas import canonical_json, sha256_of
 
-
 _deadline = ContextVar('llm_deadline', default=None)
 
+@contextmanager
+def _db(path):
+    """Open, commit on success, and always close, so Windows can delete the file afterwards."""
+    with closing(sqlite3.connect(path)) as conn:
+        with conn:
+            yield conn
 
 class AdapterError(Exception):
     pass
@@ -29,22 +35,22 @@ class ReplayMiss(AdapterError):
 class ResponseStore:
     def __init__(self, path):
         self.path = str(path)
-        with sqlite3.connect(self.path) as db:
+        with _db(self.path) as db:
             db.execute('CREATE TABLE IF NOT EXISTS llm_attempts (seq INTEGER PRIMARY KEY, input_hash TEXT, request TEXT, response TEXT, error TEXT)')
 
     def append(self, key, request, response, error=None):
-        with sqlite3.connect(self.path) as db:
+        with _db(self.path) as db:
             db.execute('INSERT INTO llm_attempts(input_hash,request,response,error) VALUES (?,?,?,?)',
                        (key, canonical_json(request), canonical_json(response), error))
 
     def attempts(self, key):
-        with sqlite3.connect(self.path) as db:
+       with _db(self.path) as db:
             return db.execute('SELECT response,error FROM llm_attempts WHERE input_hash=? ORDER BY seq', (key,)).fetchall()
 
     def export(self):
-        with sqlite3.connect(self.path) as db:
+       with _db(self.path) as db:
             rows = db.execute('SELECT input_hash,request,response,error FROM llm_attempts ORDER BY seq').fetchall()
-        return [dict(input_hash=k, request=json.loads(q), response=json.loads(r), error=e) for k,q,r,e in rows]
+            return [dict(input_hash=k, request=json.loads(q), response=json.loads(r), error=e) for k,q,r,e in rows]
 
 
 def proposal_request(role, inputs, schema, prompt_version):

@@ -159,7 +159,7 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
                                             history=history, seed=lab["config"].seed, run_id=run_id)
             store.transition(run_id, S.RED_PROPOSES, actor="agent:red", turns=turn,
                              out=[c.actions for c in candidates])
-            valid, valid_candidates, dropped = [], [], []
+            valid, dropped = [], []
             for i, c in enumerate(candidates):
                 try:
                     scenario = apply_actions(
@@ -179,7 +179,7 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
             # Dropped candidates never get here, so they can't pose as a bypass with no rules fired.
             attempts = [red.Attempt(turn=turn, recipe=c.recipe, rules_fired=sorted(rules_fired(s, rules)),
                                     moved_cents=moved_out_cents(s), near_misses=near_misses(s, rules))
-                        for s, c in zip(valid, valid_candidates) if c.recipe is not None]
+                        for s, c in valid if c.recipe is not None]
             history.extend(attempts)
             store.transition(run_id, S.MEASURE_OUTCOME, out={"bypasses": len(bypasses), "attempts": attempts})
             if bypasses:
@@ -413,8 +413,8 @@ def create_app(db_path: str | None = None, red_policy=None, *, adapter=None) -> 
             bundle["llm_recordings"] = [r for r in adapter.store.export() if r['input_hash'] in keys]
         return bundle
 
-    @app.get("/labs/{lab_id}/timeline")
-    def timeline(lab_id: str):
+    @app.get("/labs/{lab_id}/world")
+    def world_view(lab_id: str):
         lab = store.lab(lab_id)
         world = generate_world(lab["config"])
         bundle = store.export_lab(lab_id)
